@@ -274,9 +274,19 @@ function loadPlaylist(name){
 
 function playIndex(i){
     currentIndex = i;
-    const url = WORKER + currentList[i].url;
+
+    const url = WORKER + "?url=" + encodeURIComponent(currentList[i].url);
     video.src = url;
-    video.play();
+
+    const playPromise = video.play();
+
+    if (playPromise !== undefined) {
+        playPromise.catch(() => {
+            // fallback: mute + retry
+            video.muted = true;
+            video.play().catch(()=>{});
+        });
+    }
 }
 
 video.onended = () => {
@@ -286,6 +296,12 @@ video.onended = () => {
     playIndex(currentIndex);
 };
 
+document.body.addEventListener("click", () => {
+    if (video.paused && currentList.length) {
+        playIndex(currentIndex);
+    }
+}, { once: true });
+    
 document.getElementById("shuffleBtn").onclick = () => {
     shuffle = !shuffle;
     document.getElementById("shuffleBtn").textContent = "Shuffle: " + (shuffle?"ON":"OFF");
