@@ -215,23 +215,32 @@ https://video-s.twimg.com/amplify_video/1920969486070673409/vid/avc1/720x1280/xx
 https://video-s.twimg.com/amplify_video/1928313250409488384/vid/avc1/720x1280/cbvlP1y0JSbWguqz.mp4?tag=14
 `
 };
-
+    
+loadPlaylist(Object.keys(playlists)[0]);
+    
 let shuffle = false;
 let auto = true;
 let currentList = [];
 let currentIndex = 0;
 
 function parseM3U(text){
+    if (!text || typeof text !== "string") {
+        console.error("Invalid playlist data:", text);
+        return [];
+    }
+
     const lines = text.split("\n");
     const items = [];
     let title = "";
+
     lines.forEach(line => {
-        if(line.startsWith("#EXTINF")) {
+        if(line.startsWith("#EXTINF")){
             title = line.split(",")[1] || "Untitled";
-        } else if(line.startsWith("http")) {
-            items.push({title, url: line});
+        } else if(line.startsWith("http")){
+            items.push({ title, url: line });
         }
     });
+
     return items;
 }
 
@@ -240,9 +249,20 @@ const listDiv = document.getElementById("list");
 const video = document.getElementById("video");
 
 function loadPlaylist(name){
-    currentList = parseM3U(playlists[name]);
+    const raw = playlists[name];
+
+    if (!raw) {
+        console.error("Playlist not found:", name);
+        listDiv.innerHTML = "<div style='color:red'>Playlist not found</div>";
+        return;
+    }
+
+    currentList = parseM3U(raw);
+
     if(shuffle) currentList.sort(()=>Math.random()-0.5);
+
     listDiv.innerHTML="";
+
     currentList.forEach((item,i)=>{
         const div=document.createElement("div");
         div.className="item";
@@ -294,7 +314,7 @@ function addPlaylist(name, text){
     select.appendChild(opt);
 }
 
-loadPlaylist("Main");
+loadPlaylist("ManJuicePod");
 playIndex(0);
 </script>
 
