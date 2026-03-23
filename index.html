@@ -1,23 +1,28 @@
 
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>Playlist Viewer</title>
+<title>Advanced Playlist Player</title>
 <style>
-body { font-family: Arial; background:#111; color:#fff; margin:0; display:flex; height:100vh;}
-#sidebar { width:300px; overflow-y:auto; border-right:1px solid #333; padding:10px;}
-#player { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;}
-video { max-width:90%; max-height:70vh; background:black;}
-.item { padding:8px; cursor:pointer; border-bottom:1px solid #222;}
-.item:hover { background:#222;}
-select { width:100%; margin-bottom:10px;}
+body {margin:0; display:flex; height:100vh; background:#111; color:#fff; font-family:sans-serif;}
+#sidebar {width:320px; overflow-y:auto; border-right:1px solid #333; padding:10px;}
+#controls {margin-bottom:10px;}
+button, select {width:100%; margin:4px 0; padding:6px;}
+.item {padding:6px; border-bottom:1px solid #222; cursor:pointer;}
+.item:hover {background:#222;}
+#player {flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+video {max-width:90%; max-height:70vh; background:black;}
 </style>
 </head>
 <body>
 
 <div id="sidebar">
+<div id="controls">
 <select id="playlistSelect"></select>
+<button id="shuffleBtn">Shuffle: OFF</button>
+<button id="autoBtn">Auto Play: ON</button>
+</div>
 <div id="list"></div>
 </div>
 
@@ -26,13 +31,14 @@ select { width:100%; margin-bottom:10px;}
 </div>
 
 <script>
-// --- PLAYLIST STORAGE ---
+const WORKER = "https://young-truth-052a.kiluconsta.workers.dev/";
+
 const playlists = {
-    "Manjuicepod": `#EXTM3U
-#EXTINF:24,Item 1
-https://video-s.twimg.com/amplify_video/1948222634149171200/vid/avc1/1080x1920/HMe-OI7B6-6YUkQL.mp4
-#EXTINF:2,Item 2
-https://video-s.twimg.com/ext_tw_video/1852938011564183552/pu/vid/avc1/698x1240/kPlPCgu1FvbboG-d.mp4
+"ManJuicePod": `#EXTM3U
+#EXTINF:24,🏝️🍆💦 -23
+https://video-s.twimg.com/amplify_video/1948222634149171200/vid/avc1/1080x1920/HMe-OI7B6-6YUkQL.mp4?tag=21
+#EXTINF:2,♨️🍆💦 -53
+https://video-s.twimg.com/ext_tw_video/1852938011564183552/pu/vid/avc1/698x1240/kPlPCgu1FvbboG-d.mp4?tag=12
 #EXTINF:4,🌊🍆💦 -52
 https://video-s.twimg.com/amplify_video/1919198112876568576/vid/avc1/1080x1730/ZOBi17l37SwkJZT0.mp4?tag=16
 #EXTINF:4,🛁🍆💦 -55
@@ -210,62 +216,86 @@ https://video-s.twimg.com/amplify_video/1928313250409488384/vid/avc1/720x1280/cb
 `
 };
 
-// --- PARSER ---
+let shuffle = false;
+let auto = true;
+let currentList = [];
+let currentIndex = 0;
+
 function parseM3U(text){
     const lines = text.split("\n");
     const items = [];
     let title = "";
     lines.forEach(line => {
-        if(line.startsWith("#EXTINF")){
+        if(line.startsWith("#EXTINF")) {
             title = line.split(",")[1] || "Untitled";
-        } else if(line.startsWith("http")){
-            items.push({title, url:line});
+        } else if(line.startsWith("http")) {
+            items.push({title, url: line});
         }
     });
     return items;
 }
 
-// --- UI ---
 const select = document.getElementById("playlistSelect");
 const listDiv = document.getElementById("list");
 const video = document.getElementById("video");
 
 function loadPlaylist(name){
-    const items = parseM3U(playlists[name]);
-    listDiv.innerHTML = "";
-    items.forEach(item => {
-        const div = document.createElement("div");
-        div.className = "item";
-        div.textContent = item.title;
-        div.onclick = () => {
-            video.src = item.url;
-            video.play();
-        };
+    currentList = parseM3U(playlists[name]);
+    if(shuffle) currentList.sort(()=>Math.random()-0.5);
+    listDiv.innerHTML="";
+    currentList.forEach((item,i)=>{
+        const div=document.createElement("div");
+        div.className="item";
+        div.textContent=item.title;
+        div.onclick=()=>playIndex(i);
         listDiv.appendChild(div);
     });
 }
 
-// populate dropdown
+function playIndex(i){
+    currentIndex = i;
+    const url = WORKER + currentList[i].url;
+    video.src = url;
+    video.play();
+}
+
+video.onended = () => {
+    if(!auto) return;
+    currentIndex++;
+    if(currentIndex >= currentList.length) currentIndex = 0;
+    playIndex(currentIndex);
+};
+
+document.getElementById("shuffleBtn").onclick = () => {
+    shuffle = !shuffle;
+    document.getElementById("shuffleBtn").textContent = "Shuffle: " + (shuffle?"ON":"OFF");
+    loadPlaylist(select.value);
+};
+
+document.getElementById("autoBtn").onclick = () => {
+    auto = !auto;
+    document.getElementById("autoBtn").textContent = "Auto Play: " + (auto?"ON":"OFF");
+};
+
 Object.keys(playlists).forEach(name=>{
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
+    const opt=document.createElement("option");
+    opt.value=name;
+    opt.textContent=name;
     select.appendChild(opt);
 });
 
-select.onchange = () => loadPlaylist(select.value);
+select.onchange = ()=>loadPlaylist(select.value);
 
-// initial load
-loadPlaylist(Object.keys(playlists)[0]);
-
-// --- ADD NEW PLAYLIST FUNCTION ---
-function addPlaylist(name, m3uText){
-    playlists[name] = m3uText;
-    const opt = document.createElement("option");
-    opt.value = name;
-    opt.textContent = name;
+function addPlaylist(name, text){
+    playlists[name]=text;
+    const opt=document.createElement("option");
+    opt.value=name;
+    opt.textContent=name;
     select.appendChild(opt);
 }
+
+loadPlaylist("Main");
+playIndex(0);
 </script>
 
 </body>
