@@ -12013,6 +12013,11 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight" || e.key === "n") nextBtn.click();
   if (e.key === "ArrowLeft"  || e.key === "p") prevBtn.click();
   if (e.key === " ") { e.preventDefault(); video.paused ? video.play() : video.pause(); }
+  if (event.key.toLowerCase() === 'm') {
+    const video = document.getElementById('myVideo');
+    
+    // Toggle the muted property
+    video.muted = !video.muted;}
 });
 
 /* ── Playlist select ── */
