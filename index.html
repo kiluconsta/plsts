@@ -11959,6 +11959,16 @@ video.addEventListener("canplay", () => loader.classList.remove("visible"));
 video.addEventListener("waiting", () => loader.classList.add("visible"));
 video.addEventListener("playing", () => loader.classList.remove("visible"));
 
+video.addEventListener("click", () => {
+  if (video.requestFullscreen) {
+    video.requestFullscreen();
+  } else if (video.webkitEnterFullscreen) { 
+    // This is required for iPhones (iOS Safari)
+    video.webkitEnterFullscreen();
+  }
+});
+
+
 video.addEventListener("timeupdate", () => {
   if (!video.duration) return;
   const pct = (video.currentTime / video.duration) * 100;
@@ -12013,11 +12023,7 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight" || e.key === "n") nextBtn.click();
   if (e.key === "ArrowLeft"  || e.key === "p") prevBtn.click();
   if (e.key === " ") { e.preventDefault(); video.paused ? video.play() : video.pause(); }
-  if (e.key.toLowerCase() === 'm') {
-    const video = document.getElementById('myVideo');
-    
-    // Toggle the muted property
-    video.muted = !video.muted;}
+  if (e.key.toLowerCase() === 'm') video.muted = !video.muted;
 });
 
 /* ── Playlist select ── */
