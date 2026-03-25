@@ -20,7 +20,7 @@
     --text: #f0f0f5;
     --muted: #5a5a70;
     --active-bg: rgba(232,255,107,0.08);
-    --sidebar-w: 300px;
+    --sidebar-w: 15%;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -429,6 +429,11 @@
     <button class="nav-btn" id="prevBtn" title="Previous">
       <svg viewBox="0 0 16 16"><path d="M2 2h2v12H2zm3 6l9-6v12z"/></svg>
     </button>
+    <button class="nav-btn" id="playBtn" title="Play/Pause">
+        <svg viewBox="0 0 16 16">
+            <path d="M2 2h4v12H2zm8 0h4v12h-4"/>
+        </svg>
+    </button>     
     <button class="nav-btn" id="nextBtn" title="Next">
       <svg viewBox="0 0 16 16"><path d="M12 2h2v12h-2zm-1 6L2 2v12z"/></svg>
     </button>
@@ -11848,7 +11853,11 @@ const timeDur      = document.getElementById("time-dur");
 const indexBadge   = document.getElementById("index-badge");
 const prevBtn      = document.getElementById("prevBtn");
 const nextBtn      = document.getElementById("nextBtn");
-
+const playBtn      = document.getElementById("playBtn");
+const playPath     = "M3 2l10 6-10 6z";
+const pausePath    = "M2 2h4v12H2zm8 0h4v12h-4z";
+const iconPath     = playBtn.querySelector('path');  
+  
 /* ── Helpers ── */
 function fmtTime(s) {
   if (isNaN(s)) return "0:00";
@@ -12004,6 +12013,10 @@ autoBtn.addEventListener("click", () => {
 
 prevBtn.addEventListener("click", () => playIndex(currentIndex - 1 < 0 ? filteredList.length - 1 : currentIndex - 1));
 nextBtn.addEventListener("click", () => playIndex(currentIndex + 1 < filteredList.length ? currentIndex + 1 : 0));
+playBtn.addEventListener('click', () => {
+  if (video.paused) { video.play(); iconPath.setAttribute('d', pausePath); } 
+  else { video.pause(); iconPath.setAttribute('d', playPath); } 
+});
 
 /* ── Search (debounced) ── */
 let searchTimer;
