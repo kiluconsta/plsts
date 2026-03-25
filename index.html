@@ -20,7 +20,7 @@
     --text: #f0f0f5;
     --muted: #5a5a70;
     --active-bg: rgba(232,255,107,0.08);
-    --sidebar-w: 15%;
+    --sidebar-w: 20%;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -291,6 +291,8 @@
   #info-bar {
     padding: 12px 20px;
     display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
     align-items: center;
     gap: 14px;
     border-top: 1px solid var(--border);
@@ -386,7 +388,7 @@
 
   /* Mobile */
   @media (max-width: 640px) {
-    :root { --sidebar-w: 240px; }
+    :root { --sidebar-w: 23; }
     #progress-wrap { display: none; }
   }
 </style>
