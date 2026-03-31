@@ -57,6 +57,34 @@
 
 const WORKER = "https://young-truth-052a.kiluconsta.workers.dev/";
 
+let hls = null;
+
+function playIndex(i) {
+  if (i < 0 || i >= filteredList.length) return;
+  currentIndex = i;
+  const item = filteredList[i];
+  const url = WORKER + "?url=" + encodeURIComponent(item.url);
+
+  loader.classList.add("visible");
+  nowTitle.textContent = item.title;
+  indexBadge.textContent = `${i + 1} / ${filteredList.length}`;
+  highlightActive();
+
+  // Destroy previous hls instance
+  if (hls) { hls.destroy(); hls = null; }
+
+  if (item.url.includes('.m3u8') && typeof Hls !== 'undefined' && Hls.isSupported()) {
+    hls = new Hls();
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
+  } else {
+    // Native (Safari HLS or direct mp4)
+    video.src = url;
+    video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+  }
+}
+
 const playlists = {
 "ManJuicePod": `#EXTM3U
 #EXTINF:24,🏝️🍆💦 -23
