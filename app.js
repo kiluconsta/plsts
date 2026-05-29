@@ -11858,7 +11858,7 @@ https://video.bsky.app/watch/did%3Aplc%3A4gf5llrnw2ka2wl2fasqdhtb/bafkreidzwg7bf
 #EXTINF:0,-194
 https://video.bsky.app/watch/did%3Aplc%3A6zbua5etmugsl77w7eyjxaln/bafkreia27rdhilryd2ta26d3sdukp7ytboq5kz4wfzbgdopjkjwyhetliy/playlist.m3u8
 #EXTINF:0,-195
-https://video.bsky.app/watch/did%3Aplc%3Agydsioistxd5p3a5bdydko5n/bafkreihlfodleqctuktvhlr3edr26xn6athapq6rtryvqullojzutuk4fq/playlist.m3u8`  
+https://video.bsky.app/watch/did%3Aplc%3Agydsioistxd5p3a5bdydko5n/bafkreihlfodleqctuktvhlr3edr26xn6athapq6rtryvqullojzutuk4fq/playlist.m3u8`,
 
 "LPSG_Gooners_x_fuel": `#EXTM3U
 #EXTINF:4,cdn-videos.lpsg-31
@@ -12101,8 +12101,7 @@ https://cdn-videos.lpsg.com/data/video/206254/206254641-67c4978b2d20beadcba379fa
 https://cdn-videos.lpsg.com/data/video/149448/149448621-79ad50685d0652462dadae89536c2871.mp4
 #EXTINF:2227,cdn-videos.lpsg-56
 https://cdn-videos.lpsg.com/data/video/186438/186438501-b93763d45464e3f47a4243d299146105.mp4
-
-`
+`,
 };
 
 /* ── State ── */
