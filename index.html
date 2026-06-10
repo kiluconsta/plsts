@@ -42,6 +42,15 @@
       <button class="toggle-btn" id="shuffleBtn">⇄ Shuffle</button>
       <button class="toggle-btn active" id="autoBtn">↻ Auto</button>
     </div>
+    <div id="open-row">
+      <button class="toggle-btn" id="openLocalBtn">📂 Open File</button>
+      <button class="toggle-btn" id="openUrlBtn">☁ From URL</button>
+      <input type="file" id="fileInput" accept=".m3u,.m3u8,audio/x-mpegurl,application/vnd.apple.mpegurl" hidden>
+    </div>
+    <div id="util-row">
+      <button class="toggle-btn" id="densityBtn">▤ Compact</button>
+      <button class="toggle-btn" id="cleanBtn">🧹 Clean</button>
+    </div>
   </div>
   <div id="search-wrap">
     <input type="text" id="searchInput" placeholder="Search…" autocomplete="off" spellcheck="false">
@@ -80,6 +89,7 @@
     <button class="nav-btn" id="nextBtn" title="Next">
       <svg viewBox="0 0 16 16"><path d="M12 2h2v12h-2zm-1 6L2 2v12z"/></svg>
     </button>
+    <input type="range" id="volumeSlider" min="0" max="1" step="0.02" value="1" title="Volume">
     <span id="index-badge"></span>
   </div>
 </div>
@@ -87,7 +97,10 @@
 <!-- ── Mobile playlist drawer toggle ── -->
 <button id="drawer-toggle">☰ Playlist</button>
 
-<script src="https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js"></script>
+<!-- ── Toast notifications ── -->
+<div id="toast"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.17/dist/hls.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
