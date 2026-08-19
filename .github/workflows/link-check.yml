@@ -1,0 +1,67 @@
+name: Link check
+
+# The playlists point mostly at CDNs that expire their files, so entries rot
+# on their own. This sweeps them weekly, removes what's gone, and records
+# every change in tools/prune-log.md.
+
+on:
+  schedule:
+    - cron: "17 5 * * 1"          # Mondays, 05:17 UTC
+  workflow_dispatch:
+    inputs:
+      prune:
+        description: "Remove dead entries (uncheck to only report)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: link-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Exits non-zero if too much comes back dead — that's the signature of
+      # a host blocking the runner, not of the library rotting, and nothing
+      # gets pruned in that case.
+      - name: Check links
+        run: |
+          ARGS="--workers 16 --max-dead-pct 20"
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.prune }}" = "true" ]; then
+            ARGS="$ARGS --prune"
+          fi
+          echo "running: check-links.py $ARGS"
+          python3 tools/check-links.py $ARGS
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dead-links
+          path: tools/dead-links.json
+          if-no-files-found: ignore
+
+      - name: Commit changes
+        if: always()
+        run: |
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "no changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A playlists tools/prune-log.md
+          git commit -m "Prune dead playlist entries" \
+                     -m "Automated sweep — see tools/prune-log.md for what changed."
+          git push
