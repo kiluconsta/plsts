@@ -8,32 +8,312 @@
    - Volume slider
    - "Clean" button removes entries that failed this session
    - Comfortable/compact density toggle
+   v4: 3x3 pattern unlock replaces the age-gate splash
    ══════════════════════════════════════════════════════════ */
 
-/* ── Age Gate ── */
-(function () {
-  const VERIFIED_KEY = "age_verified_v1";
+/* ══════════════════════════════════════════════════════════
+   PATTERN LOCK  (replaces the old age-gate splash)
 
-  function redirectAway() {
-    window.location.replace("https://www.youtube.com");
-  }
+   Dots are numbered like a phone keypad:
 
-  function dismissSplash() {
-    sessionStorage.setItem(VERIFIED_KEY, "1");
-    const splash = document.getElementById("splash");
-    splash.style.transition = "opacity 0.4s";
-    splash.style.opacity = "0";
-    setTimeout(() => splash.remove(), 420);
-  }
+        1  2  3
+        4  5  6
+        7  8  9
 
-  window.addEventListener("DOMContentLoaded", function () {
-    if (sessionStorage.getItem(VERIFIED_KEY)) {
-      document.getElementById("splash").remove();
-    } else {
-      document.getElementById("btn-enter").addEventListener("click", dismissSplash);
-      document.getElementById("btn-leave").addEventListener("click", redirectAway);
+   Unlike a phone lock, a dot may be used more than once — the
+   only rule is you can't select the same dot twice in a row. So
+   1-2-3-5-2 is a legal pattern: it comes back up to 2 at the end.
+
+   The unlock pattern is stored as a salted hash of that digit
+   sequence, so the raw pattern isn't sitting in the source. To
+   change it: open the site, run  plstHash("12352")  in the
+   browser console with your own digits, and paste the result
+   into PATTERN_HASH below.
+
+   NOTE: this is a client-side lock — a doorbell, not a deadbolt.
+   Anyone determined can read app.js or hit playlists/*.m3u
+   directly. It keeps casual eyes off the player, nothing more.
+   ══════════════════════════════════════════════════════════ */
+const PATTERN_SALT   = "plst-lock-v1:";
+const PATTERN_HASH   = "447ed841";     // 1-2-3-5-2
+const MIN_DOTS       = 4;
+const MAX_ATTEMPTS   = 5;              // before a cooldown kicks in
+const COOLDOWN_MS    = 20000;
+const UNLOCK_KEY     = "plst_unlocked_v1";
+
+/* Resolves once the user is in — init() waits on this so nothing
+   starts playing behind the lock screen. */
+let markUnlocked;
+const unlocked = new Promise(res => { markUnlocked = res; });
+
+(function patternLock() {
+  const lockEl   = document.getElementById("lock");
+  const gridEl   = document.getElementById("pattern");
+  const trailEl  = document.getElementById("pattern-trail");
+  const liveEl   = document.getElementById("pattern-live");
+  const statusEl = document.getElementById("lock-status");
+  const subEl    = document.getElementById("lock-sub");
+  const dots     = Array.from(gridEl.querySelectorAll(".dot"));
+
+  /* Dot centres in the SVG's 300×300 coordinate space */
+  const CENTRES = dots.map((_, i) => ({
+    x: 50 + (i % 3) * 100,
+    y: 50 + Math.floor(i / 3) * 100,
+  }));
+  const HIT_RADIUS = 44;
+
+  let seq = [];              // selected dot indices, 0-based
+  let drawing = false;
+  let moved = false;         // did this gesture drag, or was it a tap?
+  let lastWasDrag = false;
+  let downPt = null;
+  let attempts = 0;
+  let cooldownUntil = 0;
+  let settleTimer = null;
+
+  /* FNV-1a (32-bit) — Math.imul keeps the multiply exactly 32-bit */
+  function hash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i);
+      h = Math.imul(h, 16777619) >>> 0;
     }
+    return h.toString(16).padStart(8, "0");
+  }
+  window.plstHash = (digits) => hash(PATTERN_SALT + String(digits).replace(/\D/g, ""));
+
+  function toSvgPoint(e) {
+    const r = gridEl.getBoundingClientRect();
+    return {
+      x: ((e.clientX - r.left) / r.width) * 300,
+      y: ((e.clientY - r.top) / r.height) * 300,
+    };
+  }
+
+  function dotAt(pt) {
+    for (let i = 0; i < CENTRES.length; i++) {
+      const dx = pt.x - CENTRES[i].x, dy = pt.y - CENTRES[i].y;
+      if (dx * dx + dy * dy <= HIT_RADIUS * HIT_RADIUS) return i;
+    }
+    return -1;
+  }
+
+  /* Dragging 1→3 should also catch 2, the way phone patterns do */
+  function midpointBetween(a, b) {
+    const r1 = Math.floor(a / 3), c1 = a % 3;
+    const r2 = Math.floor(b / 3), c2 = b % 3;
+    if ((r1 + r2) % 2 || (c1 + c2) % 2) return -1;
+    const mid = ((r1 + r2) / 2) * 3 + (c1 + c2) / 2;
+    return mid === a || mid === b ? -1 : mid;
+  }
+
+  function addDot(i) {
+    if (i < 0 || i === seq[seq.length - 1]) return;   // no immediate repeats
+    if (!seq.length) setStatus("");
+    if (seq.length) {
+      const mid = midpointBetween(seq[seq.length - 1], i);
+      if (mid >= 0 && mid !== seq[seq.length - 1]) {
+        seq.push(mid);
+        dots[mid].classList.add("on");
+      }
+    }
+    seq.push(i);
+    dots[i].classList.add("on");
+    if (navigator.vibrate) navigator.vibrate(8);
+    drawTrail();
+  }
+
+  /* Re-light the dots from scratch — a dot can appear twice, so
+     undoing one step doesn't necessarily dim it */
+  function paintDots() {
+    dots.forEach((d, i) => d.classList.toggle("on", seq.includes(i)));
+  }
+
+  function drawTrail() {
+    trailEl.setAttribute("points", seq.map(i => `${CENTRES[i].x},${CENTRES[i].y}`).join(" "));
+  }
+
+  function drawLive(pt) {
+    if (!seq.length || !pt) { liveEl.setAttribute("x2", liveEl.getAttribute("x1") || 0); return; }
+    const last = CENTRES[seq[seq.length - 1]];
+    liveEl.setAttribute("x1", last.x);
+    liveEl.setAttribute("y1", last.y);
+    liveEl.setAttribute("x2", pt.x);
+    liveEl.setAttribute("y2", pt.y);
+  }
+
+  function reset(keepStatus) {
+    clearTimeout(settleTimer);
+    seq = [];
+    moved = false;
+    downPt = null;
+    dots.forEach(d => d.classList.remove("on"));
+    gridEl.classList.remove("error", "ok", "shake", "drawing");
+    trailEl.setAttribute("points", "");
+    liveEl.setAttribute("x2", liveEl.getAttribute("x1") || 0);
+    liveEl.setAttribute("y2", liveEl.getAttribute("y1") || 0);
+    if (!keepStatus) setStatus("");
+  }
+
+  function setStatus(msg, kind) {
+    statusEl.textContent = msg;
+    statusEl.className = kind || "";
+  }
+
+  function coolingDown() {
+    const left = cooldownUntil - Date.now();
+    if (left <= 0) return false;
+    setStatus(`Too many tries — wait ${Math.ceil(left / 1000)}s`, "bad");
+    return true;
+  }
+
+  function startCooldown() {
+    cooldownUntil = Date.now() + COOLDOWN_MS;
+    const tick = () => {
+      const left = cooldownUntil - Date.now();
+      if (left <= 0) { attempts = 0; setStatus(""); return; }
+      setStatus(`Too many tries — wait ${Math.ceil(left / 1000)}s`, "bad");
+      setTimeout(tick, 500);
+    };
+    tick();
+  }
+
+  /* Tapping shouldn't punish you mid-pattern — just open up when it matches */
+  function quietCheck() {
+    if (seq.length < MIN_DOTS || !matches()) return false;
+    succeed();
+    return true;
+  }
+
+  function matches() {
+    return hash(PATTERN_SALT + seq.map(i => i + 1).join("")) === PATTERN_HASH;
+  }
+
+  function submit() {
+    if (!seq.length) return;
+    drawLive(null);
+
+    if (seq.length < MIN_DOTS) {
+      fail(`Use at least ${MIN_DOTS} dots`);
+      return;
+    }
+    if (matches()) {
+      succeed();
+    } else {
+      attempts++;
+      fail(attempts >= MAX_ATTEMPTS ? null : "Wrong pattern");
+      if (attempts >= MAX_ATTEMPTS) startCooldown();
+    }
+  }
+
+  function fail(msg) {
+    gridEl.classList.add("error", "shake");
+    if (msg) setStatus(msg, "bad");
+    if (navigator.vibrate) navigator.vibrate([30, 60, 30]);
+    settleTimer = setTimeout(() => reset(true), 650);
+  }
+
+  function succeed() {
+    gridEl.classList.add("ok");
+    setStatus("Unlocked", "good");
+    try { sessionStorage.setItem(UNLOCK_KEY, "1"); } catch {}
+    setTimeout(hideLock, 380);
+  }
+
+  function hideLock() {
+    lockEl.classList.add("hidden");
+    lockEl.setAttribute("aria-hidden", "true");
+    dots.forEach(d => (d.tabIndex = -1));
+    markUnlocked();
+    document.dispatchEvent(new CustomEvent("plst:unlock"));
+  }
+
+  function showLock() {
+    reset();
+    attempts = 0;
+    cooldownUntil = 0;
+    lockEl.classList.remove("hidden");
+    lockEl.removeAttribute("aria-hidden");
+    dots.forEach(d => (d.tabIndex = 0));
+    dots[0].focus({ preventScroll: true });
+    try { sessionStorage.removeItem(UNLOCK_KEY); } catch {}
+  }
+
+  /* ── Pointer (mouse / touch / pen) ── */
+  gridEl.addEventListener("pointerdown", (e) => {
+    if (coolingDown()) return;
+    e.preventDefault();
+    /* A finished drag (or a rejected attempt) starts over; a run of taps builds up */
+    if (lastWasDrag || gridEl.classList.contains("error")) reset();
+    lastWasDrag = false;
+    drawing = true;
+    moved = false;
+    downPt = toSvgPoint(e);
+    gridEl.classList.add("drawing");
+    gridEl.setPointerCapture(e.pointerId);
+    addDot(dotAt(downPt));
   });
+
+  gridEl.addEventListener("pointermove", (e) => {
+    if (!drawing) return;
+    const pt = toSvgPoint(e);
+    if (downPt && Math.hypot(pt.x - downPt.x, pt.y - downPt.y) > 12) moved = true;
+    addDot(dotAt(pt));
+    drawLive(pt);
+  });
+
+  const endDraw = (e) => {
+    if (!drawing) return;
+    drawing = false;
+    gridEl.classList.remove("drawing");
+    try { gridEl.releasePointerCapture(e.pointerId); } catch {}
+    drawLive(null);
+    if (moved) { lastWasDrag = true; submit(); }
+    else if (!quietCheck() && seq.length) setStatus("Tap the dots, then press Enter");
+  };
+  gridEl.addEventListener("pointerup", endDraw);
+  gridEl.addEventListener("pointercancel", endDraw);
+
+  document.addEventListener("keydown", (e) => {
+    if (lockEl.classList.contains("hidden")) return;
+    if (e.key >= "1" && e.key <= "9") {
+      if (coolingDown()) return;
+      if (gridEl.classList.contains("error")) reset();
+      lastWasDrag = false;
+      addDot(+e.key - 1);
+      quietCheck();
+      return;
+    }
+    if (e.key === "Enter") { e.preventDefault(); submit(); return; }
+    if (e.key === "Backspace") {
+      e.preventDefault();
+      seq.pop();
+      paintDots();
+      drawTrail();
+      return;
+    }
+    if (e.key === "Escape") reset();
+  });
+
+  /* Clicking the empty space around the grid clears a half-drawn attempt */
+  lockEl.addEventListener("pointerdown", (e) => {
+    if (!gridEl.contains(e.target) && seq.length && !drawing) reset();
+  });
+
+  /* ── Boot ── */
+  let alreadyIn = false;
+  try { alreadyIn = sessionStorage.getItem(UNLOCK_KEY) === "1"; } catch {}
+  if (alreadyIn) {
+    lockEl.classList.add("hidden");
+    lockEl.setAttribute("aria-hidden", "true");
+    dots.forEach(d => (d.tabIndex = -1));
+    markUnlocked();
+  } else {
+    subEl.textContent = "Draw your pattern to unlock";
+    dots[0].focus({ preventScroll: true });
+  }
+
+  window.PlstLock = { lock: showLock };
 })();
 
 const WORKER = "https://young-truth-052a.kiluconsta.workers.dev/";
@@ -49,10 +329,22 @@ let filteredList = [];
 let currentIndex = 0;
 let shuffle = false;
 let auto = true;
-let searchQuery = "";
 let hls = null;
 let density = "comfortable";          // or "compact"
 const failedUrls = new Set();          // dead entries this session
+
+/* Playback source. Some hosts serve us fine directly (lpsg, bsky,
+   monstercockland); twimg and redgifs refuse hotlinks and only work
+   through the Worker. Rather than proxy everything — or waste a failed
+   load on every twimg clip — we learn which is which per host and
+   remember it. Unknown hosts get one direct attempt, then fall back. */
+const HOSTS_KEY = "plst_hosts_v1";
+const ALWAYS_PROXY = ["twimg.com", "redgifs.com"];
+let hostMode = {};
+let pendingSrc = null;                 // { url, viaWorker }
+let prefetchEl = null;                 // hidden <video> warming the next clip
+let savedTime = 0;                     // playback position, persisted
+let resumeTime = 0;                    // position to restore on first load
 
 /* Auto-skip state */
 let consecutiveFailures = 0;
@@ -65,11 +357,12 @@ const listWrap     = document.getElementById("list-wrap");
 const listDiv      = document.getElementById("list");
 const statsEl      = document.getElementById("stats");
 const selectEl     = document.getElementById("playlistSelect");
-const searchInput  = document.getElementById("searchInput");
 const shuffleBtn   = document.getElementById("shuffleBtn");
 const autoBtn      = document.getElementById("autoBtn");
 const densityBtn   = document.getElementById("densityBtn");
 const cleanBtn     = document.getElementById("cleanBtn");
+const exportBtn    = document.getElementById("exportBtn");
+const lockBtn      = document.getElementById("lockBtn");
 const prevBtn      = document.getElementById("prevBtn");
 const nextBtn      = document.getElementById("nextBtn");
 const playBtn      = document.getElementById("playBtn");
@@ -93,12 +386,31 @@ const iconPath  = playBtn.querySelector("path");
 const pausePath = "M2 2h4v12H2zm8 0h4v12h-4";
 const playPath  = "M3 2l11 6-11 6z";
 
+/* ── Host routing ── */
+function hostOf(url) {
+  try { return new URL(url).hostname; } catch { return ""; }
+}
+
+function needsProxy(url) {
+  const h = hostOf(url);
+  if (hostMode[h]) return hostMode[h] === "proxy";
+  return ALWAYS_PROXY.some(s => h === s || h.endsWith("." + s));
+}
+
+function rememberHost(url, mode) {
+  const h = hostOf(url);
+  if (!h || hostMode[h] === mode) return;
+  hostMode[h] = mode;
+  try { localStorage.setItem(HOSTS_KEY, JSON.stringify(hostMode)); } catch {}
+}
+
 /* ── Persistence ── */
 function savePrefs() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       playlist: selectEl.value !== "__external__" ? selectEl.value : null,
       index: currentIndex,
+      time: savedTime,
       volume: video.volume,
       muted: video.muted,
       shuffle, auto, density,
@@ -206,8 +518,6 @@ async function loadPlaylist(name) {
   }
   currentList = items.slice();
   if (shuffle) shuffleArray(currentList);
-  searchQuery = "";
-  searchInput.value = "";
   consecutiveFailures = 0;
   applyFilter();
   return true;
@@ -221,8 +531,6 @@ function loadFromText(text, label) {
   }
   currentList = items;
   if (shuffle) shuffleArray(currentList);
-  searchQuery = "";
-  searchInput.value = "";
   consecutiveFailures = 0;
 
   let opt = selectEl.querySelector('option[data-external="1"]');
@@ -248,10 +556,9 @@ function shuffleArray(arr) {
   }
 }
 
-/* ── Filtering ── */
+/* ── Sync the rendered list with the working list ── */
 function applyFilter() {
-  const q = searchQuery.toLowerCase();
-  filteredList = q ? currentList.filter(i => i.title.toLowerCase().includes(q)) : currentList;
+  filteredList = currentList;
   renderVirtualList();
   updateStats();
 }
@@ -326,10 +633,8 @@ listDiv.addEventListener("click", (e) => {
 });
 
 function updateStats() {
-  const total = filteredList.length;
-  const shown = searchQuery ? `${total} of ${currentList.length}` : total;
   const dead = filteredList.filter(i => failedUrls.has(i.url)).length;
-  statsEl.textContent = `${shown} videos` + (dead ? ` · ${dead} dead` : "");
+  statsEl.textContent = `${filteredList.length} videos` + (dead ? ` · ${dead} dead` : "");
 }
 
 function highlightActive() {
@@ -350,8 +655,8 @@ function playIndex(i) {
   clearTimeout(skipTimer);
   currentIndex = i;
   const item = filteredList[i];
-  const url = WORKER + "?url=" + encodeURIComponent(item.url);
 
+  savedTime = 0;
   loader.classList.add("visible");
   nowTitle.textContent = item.title;
   indexBadge.textContent = `${i + 1} / ${filteredList.length}`;
@@ -362,17 +667,52 @@ function playIndex(i) {
   if (hls) { hls.destroy(); hls = null; }
 
   if (item.url.includes(".m3u8") && typeof Hls !== "undefined" && Hls.isSupported()) {
+    /* HLS keeps going through the proxy — segments need the CORS headers */
+    pendingSrc = null;
     hls = new Hls({ maxBufferLength: 20 });
-    hls.loadSource(url);
+    hls.loadSource(WORKER + "?url=" + encodeURIComponent(item.url));
     hls.attachMedia(video);
     hls.on(Hls.Events.MANIFEST_PARSED, () => video.play().catch(() => {}));
     hls.on(Hls.Events.ERROR, (_evt, data) => {
       if (data.fatal) handleVideoFailure(`HLS ${data.type}`);
     });
   } else {
-    video.src = url;
-    video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+    setVideoSource(item.url, needsProxy(item.url));
   }
+}
+
+function setVideoSource(url, viaWorker) {
+  pendingSrc = { url, viaWorker };
+  video.src = viaWorker ? WORKER + "?url=" + encodeURIComponent(url) : url;
+  video.play().catch(() => { video.muted = true; video.play().catch(() => {}); });
+}
+
+/* One retry through the proxy before we call an entry dead */
+function retryViaWorker() {
+  if (!pendingSrc || pendingSrc.viaWorker) return false;
+  rememberHost(pendingSrc.url, "proxy");
+  loader.classList.add("visible");
+  setVideoSource(pendingSrc.url, true);
+  return true;
+}
+
+/* ── Prefetch the next clip so the gap between videos is shorter ── */
+function prefetchNext() {
+  if (filteredList.length < 2) return;
+  const next = filteredList[currentIndex + 1 < filteredList.length ? currentIndex + 1 : 0];
+  if (!next || next.url.includes(".m3u8") || failedUrls.has(next.url)) return;
+  if (prefetchEl && prefetchEl.dataset.url === next.url) return;
+
+  if (!prefetchEl) {
+    prefetchEl = document.createElement("video");
+    prefetchEl.muted = true;
+    prefetchEl.preload = "auto";
+    prefetchEl.style.display = "none";
+    document.body.appendChild(prefetchEl);
+  }
+  prefetchEl.dataset.url = next.url;
+  prefetchEl.src = needsProxy(next.url) ? WORKER + "?url=" + encodeURIComponent(next.url) : next.url;
+  prefetchEl.load();
 }
 
 /* ── Auto-skip failed videos ── */
@@ -400,14 +740,18 @@ function handleVideoFailure(reason) {
 }
 
 video.addEventListener("error", () => {
-  if (video.currentSrc) handleVideoFailure("video error");
+  if (!video.currentSrc) return;
+  if (retryViaWorker()) return;
+  handleVideoFailure("video error");
 });
 
 let stallTimer = null;
 video.addEventListener("loadstart", () => {
   clearTimeout(stallTimer);
   stallTimer = setTimeout(() => {
-    if (video.readyState < 2 && !video.paused) handleVideoFailure("stalled");
+    if (video.readyState >= 2 || video.paused) return;
+    if (retryViaWorker()) return;
+    handleVideoFailure("stalled");
   }, 20000);
 });
 
@@ -415,6 +759,16 @@ video.addEventListener("playing", () => {
   consecutiveFailures = 0;
   clearTimeout(stallTimer);
   loader.classList.remove("visible");
+  if (pendingSrc && !pendingSrc.viaWorker) rememberHost(pendingSrc.url, "direct");
+  prefetchNext();
+});
+
+/* Pick up mid-clip after a reload */
+video.addEventListener("loadedmetadata", () => {
+  if (!resumeTime) return;
+  const t = resumeTime;
+  resumeTime = 0;
+  if (isFinite(video.duration) && t < video.duration - 1) video.currentTime = t;
 });
 
 video.addEventListener("canplay", () => loader.classList.remove("visible"));
@@ -427,6 +781,7 @@ video.addEventListener("click", () => {
 
 /* Throttled progress updates */
 let lastProgressUpdate = 0;
+let lastTimeSave = 0;
 video.addEventListener("timeupdate", () => {
   const now = performance.now();
   if (now - lastProgressUpdate < 500) return;
@@ -435,6 +790,10 @@ video.addEventListener("timeupdate", () => {
   progressFill.style.width = (video.currentTime / video.duration) * 100 + "%";
   timeCur.textContent = fmtTime(video.currentTime);
   timeDur.textContent = fmtTime(video.duration);
+
+  /* Remember the position, but don't hammer localStorage */
+  savedTime = video.currentTime;
+  if (now - lastTimeSave > 5000) { lastTimeSave = now; savePrefs(); }
 });
 
 video.addEventListener("ended", () => {
@@ -504,6 +863,40 @@ cleanBtn.addEventListener("click", () => {
   toast(`🧹 Removed ${removed} dead ${removed === 1 ? "entry" : "entries"}`);
 });
 
+/* Re-lock the player */
+let wasPlayingBeforeLock = false;
+lockBtn.addEventListener("click", () => {
+  wasPlayingBeforeLock = !video.paused;
+  video.pause();
+  iconPath.setAttribute("d", playPath);
+  window.PlstLock.lock();
+});
+
+document.addEventListener("plst:unlock", () => {
+  if (!wasPlayingBeforeLock) return;
+  wasPlayingBeforeLock = false;
+  video.play().then(() => iconPath.setAttribute("d", pausePath)).catch(() => {});
+});
+
+/* Download the working list — handy after 🧹 Clean has pruned the dead ones */
+exportBtn.addEventListener("click", () => {
+  if (!currentList.length) { toast("Nothing to export"); return; }
+  const body = currentList
+    .map(i => `#EXTINF:${i.dur || -1}, ${i.title || "Untitled"}\n${i.url}`)
+    .join("\n");
+  const label = (selectEl.selectedOptions[0]?.textContent || "playlist")
+    .replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "") || "playlist";
+
+  const url = URL.createObjectURL(new Blob(["#EXTM3U\n" + body + "\n"], { type: "audio/x-mpegurl" }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${label}.m3u`;
+  a.click();
+  /* Safari can still be reading the blob when the click returns — give it a beat */
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  toast(`⤓ Exported ${currentList.length} entries`);
+});
+
 prevBtn.addEventListener("click", () => playIndex(currentIndex - 1 < 0 ? filteredList.length - 1 : currentIndex - 1));
 nextBtn.addEventListener("click", () => playIndex(currentIndex + 1 < filteredList.length ? currentIndex + 1 : 0));
 playBtn.addEventListener("click", () => {
@@ -544,21 +937,10 @@ openUrlBtn.addEventListener("click", async () => {
   }
 });
 
-/* ── Search (debounced) ── */
-let searchTimer;
-searchInput.addEventListener("input", () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(() => {
-    searchQuery = searchInput.value.trim();
-    currentIndex = 0;
-    applyFilter();
-    if (filteredList.length) playIndex(0);
-  }, 250);
-});
-
 /* ── Keyboard shortcuts ── */
 document.addEventListener("keydown", (e) => {
-  if (e.target === searchInput) return;
+  if (!document.getElementById("lock").classList.contains("hidden")) return;
+  if (e.key.toLowerCase() === "l") { lockBtn.click(); return; }
   if (e.key === "ArrowRight" || e.key === "n") nextBtn.click();
   if (e.key === "ArrowLeft"  || e.key === "p") prevBtn.click();
   if (e.key === " ") { e.preventDefault(); playBtn.click(); }
@@ -629,6 +1011,8 @@ sidebar.addEventListener("touchend", () => {
 
 /* ── Init ── */
 (async function init() {
+  await unlocked;
+  try { hostMode = JSON.parse(localStorage.getItem(HOSTS_KEY)) || {}; } catch { hostMode = {}; }
   const prefs = loadPrefs();
 
   if (prefs.density === "compact") {
@@ -657,5 +1041,6 @@ sidebar.addEventListener("touchend", () => {
 
   const startIdx = (Number.isInteger(prefs.index) && prefs.index >= 0 && prefs.index < filteredList.length)
     ? prefs.index : 0;
+  if (typeof prefs.time === "number" && prefs.time > 1) resumeTime = prefs.time;
   playIndex(startIdx);
 })();

@@ -13,20 +13,38 @@
 </head>
 <body>
 
-<!-- ── AGE VERIFICATION SPLASH ── -->
-<div id="splash">
-  <div id="splash-box">
-    <span id="splash-icon">🔞</span>
-    <h2>Adults Only</h2>
-    <p>
-      This site contains <strong>explicit adult content</strong> including nudity and sexually explicit material.<br><br>
-      You must be <strong>18 years of age or older</strong> to enter. By clicking "I'm 18+" you confirm you are of legal age in your jurisdiction and consent to viewing adult content.
-    </p>
-    <div class="splash-btns">
-      <button id="btn-enter">✓ I'm 18+ — Enter</button>
-      <button id="btn-leave">✗ Under 18 — Leave</button>
+<!-- ── PATTERN LOCK ── -->
+<div id="lock">
+  <div id="lock-box" role="dialog" aria-modal="true" aria-labelledby="lock-title">
+    <span id="lock-icon">▦</span>
+    <h2 id="lock-title">Locked</h2>
+    <p id="lock-sub">Draw your pattern to unlock</p>
+
+    <div id="pattern"
+         role="application"
+         aria-label="Pattern lock. Drag across the dots, or press keys 1 to 9, Backspace to undo, Enter to submit.">
+      <svg id="pattern-svg" viewBox="0 0 300 300" aria-hidden="true">
+        <polyline id="pattern-trail" points=""></polyline>
+        <line id="pattern-live" x1="0" y1="0" x2="0" y2="0"></line>
+      </svg>
+      <div id="pattern-dots">
+        <button type="button" class="dot" data-n="1" aria-label="Dot 1"><i></i></button>
+        <button type="button" class="dot" data-n="2" aria-label="Dot 2"><i></i></button>
+        <button type="button" class="dot" data-n="3" aria-label="Dot 3"><i></i></button>
+        <button type="button" class="dot" data-n="4" aria-label="Dot 4"><i></i></button>
+        <button type="button" class="dot" data-n="5" aria-label="Dot 5"><i></i></button>
+        <button type="button" class="dot" data-n="6" aria-label="Dot 6"><i></i></button>
+        <button type="button" class="dot" data-n="7" aria-label="Dot 7"><i></i></button>
+        <button type="button" class="dot" data-n="8" aria-label="Dot 8"><i></i></button>
+        <button type="button" class="dot" data-n="9" aria-label="Dot 9"><i></i></button>
+      </div>
     </div>
-    <p id="splash-disclaimer">By entering you accept full responsibility for compliance with local laws.</p>
+
+    <p id="lock-status" role="status" aria-live="polite"></p>
+    <p id="lock-legal">
+      <strong>18+ only.</strong> This site contains explicit adult content. Unlocking confirms
+      you are of legal age in your jurisdiction and accept responsibility for local laws.
+    </p>
   </div>
 </div>
 
@@ -50,10 +68,9 @@
     <div id="util-row">
       <button class="toggle-btn" id="densityBtn">▤ Compact</button>
       <button class="toggle-btn" id="cleanBtn">🧹 Clean</button>
+      <button class="toggle-btn" id="lockBtn" title="Lock the player (L)">🔒 Lock</button>
+      <button class="toggle-btn" id="exportBtn" title="Download this playlist as .m3u">⤓ Export</button>
     </div>
-  </div>
-  <div id="search-wrap">
-    <input type="text" id="searchInput" placeholder="Search…" autocomplete="off" spellcheck="false">
   </div>
   <div id="stats"></div>
   <div id="list-wrap"><div id="list"></div></div>
