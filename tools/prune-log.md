@@ -49,3 +49,23 @@ Status codes: 4910×206, 290×404, 181×200, 61×403, 8×URLError, 1×503
 
 ---
 
+## 2026-08-24
+
+Checked 5,091 URLs · 5 dead (0.1%) · 7 entries removed from 7 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| BOYS-LOVE-TO-CUM.m3u | 1 |
+| Boy-Love-to-Cum-full.m3u | 1 |
+| CUM-WORLD-100K.m3u | 1 |
+| Gay-Cum-HD-Gaycumhd.m3u | 1 |
+| Gay-Men-Cum.m3u | 1 |
+| Longest_yet.m3u | 1 |
+| Manjuicepod.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4905×206, 181×200, 4×404, 1×403
+
+---
+
