@@ -14,6 +14,8 @@
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+[hidden] { display: none !important; }
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -859,8 +861,29 @@ body[data-density="compact"] .item-num { font-size: 9px; }
   border-radius: 4px;
   padding: 1px 5px;
   margin-left: 6px;
-  flex-shrink: 0;
   opacity: 0.75;
+  /* Shrinkable, or it starves the title and shoves the duration out of
+     the row — the sidebar is only ~210px wide on a small laptop */
+  flex: 0 1 auto;
+  min-width: 0;
+  /* The host outranks the title for space — the titles in these lists are
+     mostly generated noise, the host actually says something */
+  max-width: 58%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item-title {
+  flex: 1 1 40px;
+  min-width: 0;
+}
+
+.item-dur { margin-left: auto; padding-left: 4px; }
+
+/* Below this the sidebar is too narrow to carry a host badge at all */
+@media (max-width: 1000px) {
+  .item-host { display: none; }
 }
 
 .item-star {

@@ -445,6 +445,13 @@ function hostOf(url) {
   try { return new URL(url).hostname; } catch { return ""; }
 }
 
+/* video-ft.twimg.com and video-s.twimg.com are the same place as far as
+   anyone reading a list cares — keep the last two labels */
+function shortHost(url) {
+  const parts = hostOf(url).replace(/^www\./, "").split(".");
+  return parts.length > 2 ? parts.slice(-2).join(".") : parts.join(".");
+}
+
 function needsProxy(url) {
   const h = hostOf(url);
   if (hostMode[h]) return hostMode[h] === "proxy";
@@ -540,7 +547,7 @@ function parseM3U(text) {
       dur = parseInt(meta.slice(0, comma), 10) || 0;
       title = meta.slice(comma + 1) || "Untitled";
     } else if (line.startsWith("http")) {
-      items.push({ title, url: line, dur, host: hostOf(line).replace(/^www\./, "") });
+      items.push({ title, url: line, dur, host: hostOf(line).replace(/^www\./, ""), shortHost: shortHost(line) });
       title = ""; dur = 0;
     }
   }
@@ -742,7 +749,7 @@ function renderVirtualList(force = false) {
       <span class="playing-dot"></span>
       <span class="item-title">${escapeHtml(item.title || "Untitled")}</span>
       <span class="item-star" data-star="${i}" title="Star (S)">★</span>
-      ${item.host ? `<span class="item-host">${escapeHtml(item.host)}</span>` : ""}
+      ${item.shortHost ? `<span class="item-host" title="${escapeHtml(item.host || "")}">${escapeHtml(item.shortHost)}</span>` : ""}
       <span class="item-dur">${fmtDur(item.dur)}</span>
     `;
     frag.appendChild(div);

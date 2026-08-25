@@ -34,8 +34,12 @@ self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
   if (url.pathname.includes("/playlists/")) return;      // always live
 
+  /* Revalidate with the server rather than trusting the HTTP cache that
+     sits underneath us — otherwise a fresh deploy can be masked by a
+     cached copy of app.js for as long as its max-age lasts. Offline, the
+     fetch fails and we fall through to the cache as usual. */
   e.respondWith(
-    fetch(e.request)
+    fetch(e.request, { cache: "no-cache" })
       .then((res) => {
         const copy = res.clone();
         caches.open(CACHE).then(c => c.put(e.request, copy)).catch(() => {});
