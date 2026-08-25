@@ -44,6 +44,12 @@ jobs:
           echo "running: check-links.py $ARGS"
           python3 tools/check-links.py $ARGS
 
+      # Pruning changes the per-playlist counts the picker reads, so the
+      # manifest has to be rebuilt in the same commit or it goes stale.
+      - name: Refresh manifest counts
+        if: success()
+        run: python3 tools/build-manifest.py --apply
+
       - name: Upload report
         if: always()
         uses: actions/upload-artifact@v4
