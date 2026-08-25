@@ -328,17 +328,40 @@ let currentList = [];
 let filteredList = [];
 let currentIndex = 0;
 let shuffle = false;
-let auto = true;
 let hls = null;
 let density = "comfortable";          // or "compact"
-const failedUrls = new Set();          // dead entries this session
+
+/* What happens when a clip ends. "list" loops the playlist, "one" repeats
+   the clip, "next" rolls into the following playlist, "off" stops. */
+const REPEAT_MODES = ["list", "one", "next", "off"];
+const REPEAT_LABELS = { list: "↻ Loop list", one: "🔂 Repeat one", next: "⏭ Next list", off: "⏹ Stop at end" };
+let repeatMode = "list";
+
+/* Order the list is shown in. "original" keeps the file's order. */
+const SORT_MODES = ["original", "longest", "shortest", "host"];
+const SORT_LABELS = { original: "⇅ Order", longest: "⇅ Longest", shortest: "⇅ Shortest", host: "⇅ By host" };
+let sortMode = "original";
 
 /* Playback source. Some hosts serve us fine directly (lpsg, bsky,
    monstercockland); twimg and redgifs refuse hotlinks and only work
    through the Worker. Rather than proxy everything — or waste a failed
    load on every twimg clip — we learn which is which per host and
    remember it. Unknown hosts get one direct attempt, then fall back. */
-const HOSTS_KEY = "plst_hosts_v1";
+const HOSTS_KEY  = "plst_hosts_v1";
+const DEAD_KEY   = "plst_dead_v1";     // entries known dead, across sessions
+const FAVS_KEY   = "plst_favs_v1";
+const HIST_KEY   = "plst_hist_v1";
+const PLAYS_KEY  = "plst_plays_v1";
+const HISTORY_MAX = 300;
+
+/* Dead entries survive a reload now, so we don't rediscover the same
+   rot every session. plstForgetDead() in the console wipes the memory. */
+const failedUrls = new Set(readJSON(DEAD_KEY, []));
+const favUrls = new Set(readJSON(FAVS_KEY, []));
+let history = readJSON(HIST_KEY, []);          // [{url,title,dur,host,playlist,at}]
+let playCounts = readJSON(PLAYS_KEY, {});      // url -> times played
+let sleepTimer = null;
+let sleepUntil = 0;
 const ALWAYS_PROXY = ["twimg.com", "redgifs.com"];
 let hostMode = {};
 let pendingSrc = null;                 // { url, viaWorker }
@@ -351,6 +374,18 @@ let consecutiveFailures = 0;
 const MAX_CONSECUTIVE_FAILURES = 10;
 let skipTimer = null;
 
+/* ── Tiny storage helpers ── */
+function readJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch { return fallback; }
+}
+
+function writeJSON(key, value) {
+  try { localStorage.setItem(key, JSON.stringify(value)); } catch {}
+}
+
 /* ── DOM refs ── */
 const video        = document.getElementById("video");
 const listWrap     = document.getElementById("list-wrap");
@@ -358,7 +393,21 @@ const listDiv      = document.getElementById("list");
 const statsEl      = document.getElementById("stats");
 const selectEl     = document.getElementById("playlistSelect");
 const shuffleBtn   = document.getElementById("shuffleBtn");
-const autoBtn      = document.getElementById("autoBtn");
+const repeatBtn    = document.getElementById("repeatBtn");
+const sortBtn      = document.getElementById("sortBtn");
+const sleepBtn     = document.getElementById("sleepBtn");
+const helpBtn      = document.getElementById("helpBtn");
+const muteBtn      = document.getElementById("muteBtn");
+const speedBtn     = document.getElementById("speedBtn");
+const pipBtn       = document.getElementById("pipBtn");
+const fsBtn        = document.getElementById("fsBtn");
+const jumpBtn      = document.getElementById("jump-btn");
+const playlistBtn  = document.getElementById("playlistBtn");
+const pickerEl     = document.getElementById("picker");
+const pickerList   = document.getElementById("picker-list");
+const helpEl       = document.getElementById("help");
+const videoWrap    = document.getElementById("video-wrap");
+const seekFlash    = document.getElementById("seek-flash");
 const densityBtn   = document.getElementById("densityBtn");
 const cleanBtn     = document.getElementById("cleanBtn");
 const exportBtn    = document.getElementById("exportBtn");
@@ -371,6 +420,11 @@ const indexBadge   = document.getElementById("index-badge");
 const loader       = document.getElementById("loader");
 const progressBg   = document.getElementById("progress-bar-bg");
 const progressFill = document.getElementById("progress-bar-fill");
+const progressBuf  = document.getElementById("progress-bar-buffer");
+const progressWrap = document.getElementById("progress-wrap");
+const progressHandle = document.getElementById("progress-handle");
+const progressTip  = document.getElementById("progress-tip");
+const nowMeta      = document.getElementById("now-playing-meta");
 const timeCur      = document.getElementById("time-cur");
 const timeDur      = document.getElementById("time-dur");
 const toastEl      = document.getElementById("toast");
@@ -410,10 +464,15 @@ function savePrefs() {
     localStorage.setItem(STORE_KEY, JSON.stringify({
       playlist: selectEl.value !== "__external__" ? selectEl.value : null,
       index: currentIndex,
+      /* The URL is the durable pointer: shuffle reorders the list on every
+         load, and the weekly prune deletes entries out from under a saved
+         index, so restoring by position lands on the wrong clip. */
+      url: filteredList[currentIndex]?.url || null,
       time: savedTime,
       volume: video.volume,
       muted: video.muted,
-      shuffle, auto, density,
+      speed: video.playbackRate,
+      shuffle, repeatMode, sortMode, density,
     }));
   } catch {}
 }
@@ -439,7 +498,23 @@ function escapeHtml(str) {
 }
 
 let toastTimer = null;
+const toastQueue = [];
+let toastShowing = false;
+
 function toast(msg, ms = 2600) {
+  toastQueue.push({ msg, ms });
+  if (!toastShowing) nextToast();
+}
+
+function nextToast() {
+  const item = toastQueue.shift();
+  if (!item) { toastShowing = false; return; }
+  toastShowing = true;
+  showToast(item.msg, item.ms);
+  setTimeout(nextToast, item.ms + 180);
+}
+
+function showToast(msg, ms = 2600) {
   if (!toastEl) return;
   toastEl.textContent = msg;
   toastEl.classList.add("visible");
@@ -465,7 +540,7 @@ function parseM3U(text) {
       dur = parseInt(meta.slice(0, comma), 10) || 0;
       title = meta.slice(comma + 1) || "Untitled";
     } else if (line.startsWith("http")) {
-      items.push({ title, url: line, dur });
+      items.push({ title, url: line, dur, host: hostOf(line).replace(/^www\./, "") });
       title = ""; dur = 0;
     }
   }
@@ -475,7 +550,7 @@ function parseM3U(text) {
 /* ── Manifest + lazy playlist loading ── */
 async function loadManifest() {
   try {
-    const res = await fetch(MANIFEST_URL);
+    const res = await fetch(MANIFEST_URL, { cache: "no-cache" });
     if (!res.ok) throw new Error(res.status);
     manifest = await res.json();
   } catch (e) {
@@ -484,12 +559,46 @@ async function loadManifest() {
   }
 
   selectEl.innerHTML = "";
-  manifest.forEach(entry => {
+  [...VIRTUAL_LISTS.map(v => v.value), ...manifest.map(m => m.name)].forEach(value => {
     const opt = document.createElement("option");
-    opt.value = entry.name;
-    opt.textContent = entry.name;
+    opt.value = value;
+    opt.textContent = value;
     selectEl.appendChild(opt);
   });
+}
+
+/* Lists that aren't files — built from what you've starred and played */
+const VIRTUAL_LISTS = [
+  { value: "__favs__",    label: "★ Starred" },
+  { value: "__history__", label: "🕘 Recently played" },
+  { value: "__top__",     label: "🔥 Most played" },
+];
+
+function isVirtual(value) {
+  return VIRTUAL_LISTS.some(v => v.value === value);
+}
+
+/* Virtual lists are assembled from every playlist we've loaded plus the
+   history, which is the only place a starred clip is guaranteed to be
+   described even if its playlist isn't loaded yet. */
+function buildVirtualList(kind) {
+  const pool = new Map();
+  history.forEach(h => pool.set(h.url, h));
+  Object.values(playlistCache).forEach(items => items.forEach(i => {
+    if (!pool.has(i.url)) pool.set(i.url, i);
+  }));
+
+  if (kind === "__favs__") {
+    return [...favUrls].map(u => pool.get(u) || { title: "Starred clip", url: u, dur: 0, host: hostOf(u) });
+  }
+  if (kind === "__history__") {
+    return history.map(h => pool.get(h.url) || h);
+  }
+  return Object.entries(playCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 200)
+    .map(([u]) => pool.get(u))
+    .filter(Boolean);
 }
 
 async function fetchPlaylist(name) {
@@ -497,7 +606,7 @@ async function fetchPlaylist(name) {
   const entry = manifest.find(m => m.name === name);
   if (!entry) return null;
   try {
-    const res = await fetch(PLAYLIST_DIR + encodeURIComponent(entry.file));
+    const res = await fetch(PLAYLIST_DIR + encodeURIComponent(entry.file), { cache: "no-cache" });
     if (!res.ok) throw new Error(res.status);
     const text = await res.text();
     const items = parseM3U(text);
@@ -510,17 +619,45 @@ async function fetchPlaylist(name) {
 }
 
 async function loadPlaylist(name) {
-  listDiv.innerHTML = "<div class='list-msg'>Loading…</div>";
-  const items = await fetchPlaylist(name);
-  if (!items) {
-    listDiv.innerHTML = "<div class='list-msg error'>Playlist not found</div>";
-    return false;
+  showSkeleton();
+
+  let items;
+  if (isVirtual(name)) {
+    items = buildVirtualList(name);
+    if (!items.length) {
+      listDiv.innerHTML = "<div class='list-msg'>Nothing here yet</div>";
+      currentList = [];
+      applyFilter();
+      return false;
+    }
+  } else {
+    items = await fetchPlaylist(name);
+    if (!items) {
+      listDiv.innerHTML = "<div class='list-msg error'>Playlist not found</div>";
+      return false;
+    }
   }
+
   currentList = items.slice();
-  if (shuffle) shuffleArray(currentList);
+  applyOrder();
   consecutiveFailures = 0;
   applyFilter();
+  updatePlaylistBtn();
   return true;
+}
+
+/* Shuffle and sort are the same decision, so they can't both be on */
+function applyOrder() {
+  if (shuffle) { shuffleArray(currentList); return; }
+  if (sortMode === "longest")  currentList.sort((a, b) => (b.dur || 0) - (a.dur || 0));
+  if (sortMode === "shortest") currentList.sort((a, b) => (a.dur || 0) - (b.dur || 0));
+  if (sortMode === "host")     currentList.sort((a, b) => (a.host || "").localeCompare(b.host || ""));
+}
+
+function showSkeleton() {
+  listDiv.style.height = "";
+  listDiv.innerHTML = Array.from({ length: 12 },
+    (_, i) => `<div class="skeleton" style="width:${90 - (i % 4) * 14}%"></div>`).join("");
 }
 
 function loadFromText(text, label) {
@@ -530,7 +667,7 @@ function loadFromText(text, label) {
     return false;
   }
   currentList = items;
-  if (shuffle) shuffleArray(currentList);
+  applyOrder();
   consecutiveFailures = 0;
 
   let opt = selectEl.querySelector('option[data-external="1"]');
@@ -599,10 +736,13 @@ function renderVirtualList(force = false) {
     div.className = "item" + (i === currentIndex ? " playing" : "") + (failedUrls.has(item.url) ? " dead" : "");
     div.dataset.idx = i;
     div.style.top = (i * rowH()) + "px";
+    if (favUrls.has(item.url)) div.className += " starred";
     div.innerHTML = `
       <span class="item-num">${i + 1}</span>
       <span class="playing-dot"></span>
-      <span class="item-title">${escapeHtml(item.title)}</span>
+      <span class="item-title">${escapeHtml(item.title || "Untitled")}</span>
+      <span class="item-star" data-star="${i}" title="Star (S)">★</span>
+      ${item.host ? `<span class="item-host">${escapeHtml(item.host)}</span>` : ""}
       <span class="item-dur">${fmtDur(item.dur)}</span>
     `;
     frag.appendChild(div);
@@ -626,27 +766,78 @@ window.addEventListener("resize", () => renderVirtualList(true));
 
 /* Event delegation for row clicks */
 listDiv.addEventListener("click", (e) => {
+  const starEl = e.target.closest("[data-star]");
+  if (starEl) {
+    e.stopPropagation();
+    toggleStar(parseInt(starEl.dataset.star, 10));
+    return;
+  }
   const row = e.target.closest(".item");
   if (!row) return;
-  playIndex(parseInt(row.dataset.idx, 10));
+  const idx = parseInt(row.dataset.idx, 10);
+  /* Give a known-dead entry another go instead of leaving it stranded —
+     hosts do come back, and the dead list now outlives the session. */
+  if (filteredList[idx] && failedUrls.has(filteredList[idx].url)) {
+    failedUrls.delete(filteredList[idx].url);
+    writeJSON(DEAD_KEY, [...failedUrls]);
+    toast("Retrying…");
+  }
+  playIndex(idx);
   if (isMobileLayout()) closeDrawer();
 });
 
+function toggleStar(i) {
+  const item = filteredList[i];
+  if (!item) return;
+  if (favUrls.has(item.url)) { favUrls.delete(item.url); toast("Unstarred"); }
+  else { favUrls.add(item.url); toast("★ Starred"); }
+  writeJSON(FAVS_KEY, [...favUrls]);
+  renderVirtualList(true);
+}
+
 function updateStats() {
   const dead = filteredList.filter(i => failedUrls.has(i.url)).length;
-  statsEl.textContent = `${filteredList.length} videos` + (dead ? ` · ${dead} dead` : "");
+  const secs = filteredList.reduce((sum, i) => sum + (i.dur > 0 ? i.dur : 0), 0);
+  statsEl.textContent = `${filteredList.length} videos`
+    + (secs ? ` · ${fmtSpan(secs)}` : "")
+    + (dead ? ` · ${dead} dead` : "");
+}
+
+/* 4821 -> "1h 20m", 320 -> "5m" */
+function fmtSpan(s) {
+  const h = Math.floor(s / 3600), m = Math.round((s % 3600) / 60);
+  return h ? `${h}h ${m}m` : `${m}m`;
 }
 
 function highlightActive() {
   renderVirtualList(true);
-  // Ensure active row is visible
+  scrollToCurrent();
+}
+
+function scrollToCurrent() {
   const targetTop = currentIndex * rowH();
   const viewTop = listWrap.scrollTop;
   const viewBottom = viewTop + listWrap.clientHeight;
   if (targetTop < viewTop || targetTop + rowH() > viewBottom) {
     listWrap.scrollTo({ top: targetTop - listWrap.clientHeight / 2, behavior: "smooth" });
   }
+  updateJumpBtn();
 }
+
+/* Offer a way back once the playing row has scrolled out of sight */
+function updateJumpBtn() {
+  if (!filteredList.length) { jumpBtn.hidden = true; return; }
+  const targetTop = currentIndex * rowH();
+  const viewTop = listWrap.scrollTop;
+  const viewBottom = viewTop + listWrap.clientHeight;
+  const off = targetTop + rowH() < viewTop || targetTop > viewBottom;
+  jumpBtn.hidden = !off;
+  if (off) jumpBtn.textContent = targetTop < viewTop ? "▴ Jump to playing" : "▾ Jump to playing";
+}
+
+jumpBtn.addEventListener("click", () => {
+  listWrap.scrollTo({ top: currentIndex * rowH() - listWrap.clientHeight / 2, behavior: "smooth" });
+});
 
 /* ── Playback ── */
 function playIndex(i) {
@@ -658,8 +849,11 @@ function playIndex(i) {
 
   savedTime = 0;
   loader.classList.add("visible");
-  nowTitle.textContent = item.title;
+  nowTitle.textContent = item.title || "Untitled";
+  nowMeta.textContent = [item.host, item.dur > 0 ? fmtTime(item.dur) : ""].filter(Boolean).join(" · ");
   indexBadge.textContent = `${i + 1} / ${filteredList.length}`;
+  recordPlay(item);
+  setMediaSession(item);
   highlightActive();
   iconPath.setAttribute("d", pausePath);
   savePrefs();
@@ -696,6 +890,58 @@ function retryViaWorker() {
   return true;
 }
 
+/* ── History, play counts, and the OS media controls ── */
+function recordPlay(item) {
+  playCounts[item.url] = (playCounts[item.url] || 0) + 1;
+  writeJSON(PLAYS_KEY, playCounts);
+
+  history = history.filter(h => h.url !== item.url);
+  history.unshift({
+    url: item.url, title: item.title, dur: item.dur, host: item.host,
+    playlist: selectEl.value, at: Date.now(),
+  });
+  if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
+  writeJSON(HIST_KEY, history);
+}
+
+/* Lock screen, headphone buttons, car stereo. The title is usually
+   noise, so the host and playlist do the describing. */
+function setMediaSession(item) {
+  if (!("mediaSession" in navigator)) return;
+  const listName = isVirtual(selectEl.value)
+    ? (VIRTUAL_LISTS.find(v => v.value === selectEl.value)?.label || "")
+    : selectEl.value;
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: item.title || "Untitled",
+    artist: item.host || "",
+    album: listName === "__external__" ? "Opened file" : listName,
+  });
+  const set = (action, fn) => {
+    try { navigator.mediaSession.setActionHandler(action, fn); } catch {}
+  };
+  set("play", () => video.play());
+  set("pause", () => video.pause());
+  set("previoustrack", () => prevBtn.click());
+  set("nexttrack", () => nextBtn.click());
+  set("seekbackward", () => seekBy(-10));
+  set("seekforward", () => seekBy(10));
+  set("seekto", (d) => { if (d.seekTime != null) video.currentTime = d.seekTime; });
+}
+
+function seekBy(seconds) {
+  if (!isFinite(video.duration)) return;
+  video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + seconds));
+  flashSeek(seconds);
+}
+
+function flashSeek(seconds) {
+  seekFlash.hidden = false;
+  seekFlash.className = seconds < 0 ? "left" : "right";
+  seekFlash.textContent = `${seconds < 0 ? "◂◂" : "▸▸"} ${Math.abs(seconds)}s`;
+  clearTimeout(flashSeek._t);
+  flashSeek._t = setTimeout(() => { seekFlash.hidden = true; }, 480);
+}
+
 /* ── Prefetch the next clip so the gap between videos is shorter ── */
 function prefetchNext() {
   if (filteredList.length < 2) return;
@@ -715,13 +961,26 @@ function prefetchNext() {
   prefetchEl.load();
 }
 
+/* Walk forward past anything already known dead, but never loop forever */
+function nextLiveIndex(from) {
+  const n = filteredList.length;
+  for (let step = 1; step <= n; step++) {
+    const idx = (from + step) % n;
+    if (!failedUrls.has(filteredList[idx].url)) return idx;
+  }
+  return (from + 1) % n;
+}
+
 /* ── Auto-skip failed videos ── */
 function handleVideoFailure(reason) {
   consecutiveFailures++;
   loader.classList.remove("visible");
 
   const failedItem = filteredList[currentIndex];
-  if (failedItem) failedUrls.add(failedItem.url);
+  if (failedItem) {
+    failedUrls.add(failedItem.url);
+    writeJSON(DEAD_KEY, [...failedUrls]);
+  }
   updateStats();
   renderVirtualList(true);
 
@@ -733,10 +992,7 @@ function handleVideoFailure(reason) {
 
   toast(`⏭ Skipping "${failedItem?.title || "video"}" (failed to load)`);
 
-  skipTimer = setTimeout(() => {
-    const next = currentIndex + 1 < filteredList.length ? currentIndex + 1 : 0;
-    playIndex(next);
-  }, 900);
+  skipTimer = setTimeout(() => playIndex(nextLiveIndex(currentIndex)), 900);
 }
 
 video.addEventListener("error", () => {
@@ -774,10 +1030,42 @@ video.addEventListener("loadedmetadata", () => {
 video.addEventListener("canplay", () => loader.classList.remove("visible"));
 video.addEventListener("waiting", () => loader.classList.add("visible"));
 
-video.addEventListener("click", () => {
-  if (video.requestFullscreen) video.requestFullscreen();
-  else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+/* Click plays/pauses — fullscreen moved to its own button and to a
+   double-click, since pausing is the thing you do constantly. On touch,
+   a double-tap on the left or right third seeks instead. */
+let clickTimer = null;
+let lastTapTime = 0;
+let lastTapX = 0;
+
+videoWrap.addEventListener("click", (e) => {
+  if (e.target.closest("#loader")) return;
+
+  const now = Date.now();
+  const rect = videoWrap.getBoundingClientRect();
+  const third = (e.clientX - rect.left) / rect.width;
+
+  if (now - lastTapTime < 320 && Math.abs(e.clientX - lastTapX) < 60) {
+    clearTimeout(clickTimer);
+    lastTapTime = 0;
+    if (third < 0.33)      seekBy(-10);
+    else if (third > 0.67) seekBy(10);
+    else                   toggleFullscreen();
+    return;
+  }
+
+  lastTapTime = now;
+  lastTapX = e.clientX;
+  clearTimeout(clickTimer);
+  clickTimer = setTimeout(() => playBtn.click(), 320);
 });
+
+videoWrap.addEventListener("dblclick", (e) => e.preventDefault());
+
+function toggleFullscreen() {
+  if (document.fullscreenElement) { document.exitFullscreen(); return; }
+  if (videoWrap.requestFullscreen) videoWrap.requestFullscreen();
+  else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
+}
 
 /* Throttled progress updates */
 let lastProgressUpdate = 0;
@@ -787,8 +1075,12 @@ video.addEventListener("timeupdate", () => {
   if (now - lastProgressUpdate < 500) return;
   lastProgressUpdate = now;
   if (!video.duration) return;
-  progressFill.style.width = (video.currentTime / video.duration) * 100 + "%";
-  timeCur.textContent = fmtTime(video.currentTime);
+  if (!scrubbing) {
+    const ratio = video.currentTime / video.duration;
+    progressFill.style.width = ratio * 100 + "%";
+    progressHandle.style.left = ratio * 100 + "%";
+    timeCur.textContent = fmtTime(video.currentTime);
+  }
   timeDur.textContent = fmtTime(video.duration);
 
   /* Remember the position, but don't hammer localStorage */
@@ -797,16 +1089,82 @@ video.addEventListener("timeupdate", () => {
 });
 
 video.addEventListener("ended", () => {
-  if (!auto) return;
-  const next = currentIndex + 1 < filteredList.length ? currentIndex + 1 : 0;
-  playIndex(next);
+  if (repeatMode === "off") return;
+  if (repeatMode === "one") { video.currentTime = 0; video.play().catch(() => {}); return; }
+
+  const atEnd = currentIndex + 1 >= filteredList.length;
+  if (atEnd && repeatMode === "next") { advancePlaylist(); return; }
+  playIndex(atEnd ? 0 : currentIndex + 1);
 });
 
-progressBg.addEventListener("click", (e) => {
-  if (!video.duration) return;
+/* Roll into the following playlist in manifest order */
+async function advancePlaylist() {
+  const names = manifest.map(m => m.name);
+  const here = names.indexOf(selectEl.value);
+  const nextName = names[(here + 1) % names.length];
+  if (!nextName) return;
+  selectEl.value = nextName;
+  const ok = await loadPlaylist(nextName);
+  if (ok) { playIndex(0); savePrefs(); toast(`▶ ${nextName}`); }
+}
+
+function ratioAt(clientX) {
   const rect = progressBg.getBoundingClientRect();
-  video.currentTime = ((e.clientX - rect.left) / rect.width) * video.duration;
+  return Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+}
+
+let scrubbing = false;
+
+progressBg.addEventListener("pointerdown", (e) => {
+  if (!video.duration) return;
+  scrubbing = true;
+  progressWrap.classList.add("scrubbing");
+  progressBg.setPointerCapture(e.pointerId);
+  paintProgress(ratioAt(e.clientX));
 });
+
+progressBg.addEventListener("pointermove", (e) => {
+  if (!video.duration) return;
+  const r = ratioAt(e.clientX);
+  if (scrubbing) paintProgress(r);
+  showProgressTip(e.clientX, r);
+});
+
+const endScrub = (e) => {
+  if (!scrubbing) return;
+  scrubbing = false;
+  progressWrap.classList.remove("scrubbing");
+  try { progressBg.releasePointerCapture(e.pointerId); } catch {}
+  video.currentTime = ratioAt(e.clientX) * video.duration;
+};
+
+progressBg.addEventListener("pointerup", endScrub);
+progressBg.addEventListener("pointercancel", endScrub);
+progressBg.addEventListener("pointerleave", () => { progressTip.hidden = true; });
+
+/* Paint without waiting for timeupdate, so dragging feels attached */
+function paintProgress(ratio) {
+  progressFill.style.width = ratio * 100 + "%";
+  progressHandle.style.left = ratio * 100 + "%";
+  timeCur.textContent = fmtTime(ratio * video.duration);
+}
+
+function showProgressTip(clientX, ratio) {
+  if (!isFinite(video.duration)) return;
+  const rect = progressWrap.getBoundingClientRect();
+  progressTip.hidden = false;
+  progressTip.textContent = fmtTime(ratio * video.duration);
+  progressTip.style.left = (clientX - rect.left) + "px";
+}
+
+function paintBuffered() {
+  if (!video.duration || !video.buffered.length) { progressBuf.style.width = "0"; return; }
+  const end = video.buffered.end(video.buffered.length - 1);
+  progressBuf.style.width = Math.min(100, (end / video.duration) * 100) + "%";
+}
+
+video.addEventListener("progress", paintBuffered);
+video.addEventListener("loadeddata", paintBuffered);
 
 /* ── Volume ── */
 if (volumeSlider) {
@@ -833,11 +1191,119 @@ shuffleBtn.addEventListener("click", () => {
   savePrefs();
 });
 
-autoBtn.addEventListener("click", () => {
-  auto = !auto;
-  autoBtn.classList.toggle("active", auto);
+repeatBtn.addEventListener("click", () => {
+  repeatMode = REPEAT_MODES[(REPEAT_MODES.indexOf(repeatMode) + 1) % REPEAT_MODES.length];
+  paintRepeatBtn();
   savePrefs();
 });
+
+function paintRepeatBtn() {
+  repeatBtn.textContent = REPEAT_LABELS[repeatMode];
+  repeatBtn.classList.toggle("active", repeatMode !== "off");
+}
+
+sortBtn.addEventListener("click", () => {
+  sortMode = SORT_MODES[(SORT_MODES.indexOf(sortMode) + 1) % SORT_MODES.length];
+  if (sortMode !== "original" && shuffle) {
+    shuffle = false;
+    shuffleBtn.classList.remove("active");
+  }
+  paintSortBtn();
+
+  /* Reordering moves the playing clip, so follow it rather than the index */
+  const playingUrl = filteredList[currentIndex]?.url;
+  const source = isVirtual(selectEl.value) || selectEl.value === "__external__"
+    ? currentList : (playlistCache[selectEl.value] || currentList);
+  currentList = source.slice();
+  applyOrder();
+  applyFilter();
+  const found = filteredList.findIndex(i => i.url === playingUrl);
+  currentIndex = found >= 0 ? found : 0;
+  renderVirtualList(true);
+  scrollToCurrent();
+  savePrefs();
+});
+
+function paintSortBtn() {
+  sortBtn.textContent = SORT_LABELS[sortMode];
+  sortBtn.classList.toggle("active", sortMode !== "original");
+}
+
+/* ── Sleep timer ── */
+const SLEEP_STEPS = [0, 15, 30, 60];
+let sleepMinutes = 0;
+
+sleepBtn.addEventListener("click", () => {
+  sleepMinutes = SLEEP_STEPS[(SLEEP_STEPS.indexOf(sleepMinutes) + 1) % SLEEP_STEPS.length];
+  clearTimeout(sleepTimer);
+
+  if (!sleepMinutes) {
+    sleepUntil = 0;
+    paintSleepBtn();
+    toast("Sleep timer off");
+    return;
+  }
+  sleepUntil = Date.now() + sleepMinutes * 60000;
+  sleepTimer = setTimeout(() => {
+    video.pause();
+    iconPath.setAttribute("d", playPath);
+    sleepMinutes = 0;
+    sleepUntil = 0;
+    paintSleepBtn();
+    toast("😴 Sleep timer — paused");
+  }, sleepMinutes * 60000);
+  paintSleepBtn();
+  toast(`⏱ Sleeping in ${sleepMinutes} min`);
+});
+
+function paintSleepBtn() {
+  const left = sleepUntil ? Math.ceil((sleepUntil - Date.now()) / 60000) : 0;
+  sleepBtn.textContent = left ? `⏱ ${left}m` : "⏱ Sleep";
+  sleepBtn.classList.toggle("active", !!left);
+}
+
+setInterval(() => { if (sleepUntil) paintSleepBtn(); }, 30000);
+
+/* ── Extra transport ── */
+muteBtn.addEventListener("click", () => {
+  video.muted = !video.muted;
+  paintMuteBtn();
+});
+
+function paintMuteBtn() {
+  muteBtn.classList.toggle("on", !video.muted);
+  muteBtn.title = video.muted ? "Unmute (M)" : "Mute (M)";
+  muteBtn.style.opacity = video.muted ? "0.45" : "1";
+}
+
+video.addEventListener("volumechange", paintMuteBtn);
+
+const SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2];
+
+speedBtn.addEventListener("click", () => setSpeed(SPEEDS[(SPEEDS.indexOf(video.playbackRate) + 1) % SPEEDS.length]));
+
+function setSpeed(rate) {
+  video.playbackRate = rate;
+  speedBtn.textContent = `${rate}×`;
+  speedBtn.classList.toggle("active", rate !== 1);
+  savePrefs();
+}
+
+function nudgeSpeed(dir) {
+  const i = SPEEDS.indexOf(video.playbackRate);
+  setSpeed(SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, (i < 0 ? 2 : i) + dir))]);
+}
+
+pipBtn.addEventListener("click", async () => {
+  try {
+    if (document.pictureInPictureElement) await document.exitPictureInPicture();
+    else await video.requestPictureInPicture();
+  } catch { toast("⚠ Picture-in-picture unavailable here"); }
+});
+
+if (!document.pictureInPictureEnabled) pipBtn.style.display = "none";
+
+fsBtn.addEventListener("click", toggleFullscreen);
 
 densityBtn.addEventListener("click", () => {
   density = density === "comfortable" ? "compact" : "comfortable";
@@ -937,15 +1403,100 @@ openUrlBtn.addEventListener("click", async () => {
   }
 });
 
+/* ══════════════════════════════════════════════
+   PLAYLIST PICKER
+   The counts and durations come baked into index.json by
+   tools/build-manifest.py, so opening this costs no fetching.
+   ══════════════════════════════════════════════ */
+function openPicker() {
+  pickerList.innerHTML = "";
+
+  const addRow = (value, label, meta) => {
+    const b = document.createElement("button");
+    b.className = "picker-row" + (selectEl.value === value ? " active" : "");
+    b.innerHTML = `<span class="pr-name">${escapeHtml(label)}</span><span class="pr-meta">${escapeHtml(meta)}</span>`;
+    b.addEventListener("click", () => {
+      closePicker();
+      selectEl.value = value;
+      selectEl.dispatchEvent(new Event("change"));
+    });
+    pickerList.appendChild(b);
+  };
+
+  const addSep = (text) => {
+    const d = document.createElement("div");
+    d.className = "picker-sep";
+    d.textContent = text;
+    pickerList.appendChild(d);
+  };
+
+  addSep("Yours");
+  addRow("__favs__", "★ Starred", `${favUrls.size}`);
+  addRow("__history__", "🕘 Recently played", `${history.length}`);
+  addRow("__top__", "🔥 Most played", `${Object.keys(playCounts).length}`);
+
+  addSep(`${manifest.length} playlists`);
+  manifest.forEach(m => {
+    const bits = [];
+    if (m.count) bits.push(`${m.count}`);
+    if (m.seconds) bits.push(fmtSpan(m.seconds));
+    addRow(m.name, m.name, bits.join(" · "));
+  });
+
+  pickerEl.hidden = false;
+  pickerList.querySelector(".picker-row.active")?.scrollIntoView({ block: "center" });
+}
+
+function closePicker() { pickerEl.hidden = true; }
+
+playlistBtn.addEventListener("click", openPicker);
+document.getElementById("picker-close").addEventListener("click", closePicker);
+pickerEl.addEventListener("click", (e) => { if (e.target === pickerEl) closePicker(); });
+
+function updatePlaylistBtn() {
+  const value = selectEl.value;
+  const virtual = VIRTUAL_LISTS.find(v => v.value === value);
+  const entry = manifest.find(m => m.name === value);
+
+  document.getElementById("playlistBtn-name").textContent =
+    virtual ? virtual.label : (value === "__external__" ? selectEl.selectedOptions[0]?.textContent || "Opened file" : value);
+
+  const bits = [];
+  if (entry?.count) bits.push(`${entry.count} videos`);
+  if (entry?.seconds) bits.push(fmtSpan(entry.seconds));
+  document.getElementById("playlistBtn-meta").textContent = bits.join(" · ") || `${currentList.length} videos`;
+}
+
+/* ── Shortcut list ── */
+function toggleHelp(force) {
+  helpEl.hidden = force !== undefined ? !force : !helpEl.hidden;
+}
+
+helpBtn.addEventListener("click", () => toggleHelp(true));
+document.getElementById("help-close").addEventListener("click", () => toggleHelp(false));
+helpEl.addEventListener("click", (e) => { if (e.target === helpEl) toggleHelp(false); });
+
 /* ── Keyboard shortcuts ── */
 document.addEventListener("keydown", (e) => {
   if (!document.getElementById("lock").classList.contains("hidden")) return;
-  if (e.key.toLowerCase() === "l") { lockBtn.click(); return; }
-  if (e.key === "ArrowRight" || e.key === "n") nextBtn.click();
-  if (e.key === "ArrowLeft"  || e.key === "p") prevBtn.click();
+  if (e.key === "Escape") { closePicker(); toggleHelp(false); return; }
+  if (e.key === "?") { toggleHelp(); return; }
+
+  const k = e.key.toLowerCase();
+  if (k === "l") { lockBtn.click(); return; }
+  if (k === "n") nextBtn.click();
+  if (k === "p") prevBtn.click();
+  if (k === "r") repeatBtn.click();
+  if (k === "s") toggleStar(currentIndex);
+  if (k === "i") pipBtn.click();
+  if (k === "m") muteBtn.click();
+  if (k === "f") toggleFullscreen();
+  if (e.key === "[") nudgeSpeed(-1);
+  if (e.key === "]") nudgeSpeed(1);
+  /* Arrows seek — skipping tracks is n/p, which is the commoner need */
+  if (e.key === "ArrowRight") { e.preventDefault(); seekBy(10); }
+  if (e.key === "ArrowLeft")  { e.preventDefault(); seekBy(-10); }
   if (e.key === " ") { e.preventDefault(); playBtn.click(); }
-  if (e.key.toLowerCase() === "m") video.muted = !video.muted;
-  if (e.key.toLowerCase() === "f") video.requestFullscreen?.();
   if (e.key === "ArrowUp")   { e.preventDefault(); video.volume = Math.min(1, video.volume + 0.05); }
   if (e.key === "ArrowDown") { e.preventDefault(); video.volume = Math.max(0, video.volume - 0.05); }
 });
@@ -955,7 +1506,10 @@ selectEl.addEventListener("change", async () => {
   if (selectEl.value === "__external__") return;
   const ok = await loadPlaylist(selectEl.value);
   if (ok) { playIndex(0); savePrefs(); }
+  updatePlaylistBtn();
 });
+
+listWrap.addEventListener("scroll", updateJumpBtn, { passive: true });
 
 /* ══════════════════════════════════════════════
    MOBILE DRAWER (with swipe-down to close)
@@ -1021,12 +1575,21 @@ sidebar.addEventListener("touchend", () => {
     document.body.dataset.density = "compact";
   }
   if (prefs.shuffle) { shuffle = true; shuffleBtn.classList.add("active"); }
-  if (prefs.auto === false) { auto = false; autoBtn.classList.remove("active"); }
+  if (SORT_MODES.includes(prefs.sortMode)) sortMode = prefs.sortMode;
+  /* prefs.auto is the pre-v5 boolean; false meant "stop at the end" */
+  repeatMode = REPEAT_MODES.includes(prefs.repeatMode) ? prefs.repeatMode
+             : (prefs.auto === false ? "off" : "list");
+  paintRepeatBtn();
+  paintSortBtn();
+  paintSleepBtn();
+
   if (typeof prefs.volume === "number") {
     video.volume = prefs.volume;
     if (volumeSlider) volumeSlider.value = prefs.volume;
   }
   if (prefs.muted) video.muted = true;
+  paintMuteBtn();
+  setSpeed(SPEEDS.includes(prefs.speed) ? prefs.speed : 1);
 
   await loadManifest();
   if (!manifest.length) return;
@@ -1039,8 +1602,32 @@ sidebar.addEventListener("touchend", () => {
   const ok = await loadPlaylist(startName);
   if (!ok) return;
 
-  const startIdx = (Number.isInteger(prefs.index) && prefs.index >= 0 && prefs.index < filteredList.length)
-    ? prefs.index : 0;
-  if (typeof prefs.time === "number" && prefs.time > 1) resumeTime = prefs.time;
+  updatePlaylistBtn();
+
+  /* Resolve the saved URL first: shuffle reorders the list on every load
+     and the weekly prune deletes entries, so the old index is a guess. */
+  let startIdx = prefs.url ? filteredList.findIndex(i => i.url === prefs.url) : -1;
+  if (startIdx < 0) {
+    startIdx = (Number.isInteger(prefs.index) && prefs.index >= 0 && prefs.index < filteredList.length)
+      ? prefs.index : 0;
+  } else if (typeof prefs.time === "number" && prefs.time > 1) {
+    resumeTime = prefs.time;                 // only resume into the same clip
+  }
   playIndex(startIdx);
 })();
+
+/* ── Offline shell ── */
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("sw.js").catch(() => {});
+  });
+}
+
+/* Console escape hatches */
+window.plstForgetDead = () => {
+  failedUrls.clear();
+  writeJSON(DEAD_KEY, []);
+  renderVirtualList(true);
+  updateStats();
+  return "dead list cleared";
+};

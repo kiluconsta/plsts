@@ -1,2 +1,3 @@
 tools/dead-links.json
 __pycache__/
+.DS_Store

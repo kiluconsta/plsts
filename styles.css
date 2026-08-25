@@ -803,3 +803,345 @@ body[data-density="compact"] .item-num { font-size: 9px; }
   :root { --sidebar-w: 30%; }
   #progress-wrap { max-width: 180px; }
 }
+
+/* ══════════════════════════════════════════════
+   v5 additions
+   ══════════════════════════════════════════════ */
+
+/* The native select is kept as state, not as UI */
+#playlistSelect {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#playlistBtn {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+
+#playlistBtn:hover { border-color: var(--muted); }
+
+#playlistBtn-name {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#playlistBtn-meta {
+  display: block;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── Row anatomy: number, host, duration carry the signal ── */
+.item-host {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  color: var(--muted);
+  background: var(--surface2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 6px;
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.item-star {
+  flex-shrink: 0;
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.item:hover .item-star,
+.item.starred .item-star { opacity: 1; }
+.item.starred .item-star { color: var(--accent); }
+
+.item-title { opacity: 0.72; }
+.item.playing .item-title { opacity: 1; }
+
+/* ── Skeleton rows ── */
+.skeleton {
+  height: 12px;
+  margin: 12px 18px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--surface2) 25%, rgba(255,255,255,0.05) 50%, var(--surface2) 75%);
+  background-size: 300% 100%;
+  animation: skeleton-slide 1.3s ease-in-out infinite;
+}
+
+@keyframes skeleton-slide {
+  from { background-position: 100% 0; }
+  to   { background-position: 0 0; }
+}
+
+/* ── Jump back to the playing row ── */
+/* Pinned to the sidebar, not to the scrolling list — an absolutely
+   positioned child of the scroll container rides away with the content. */
+#jump-btn {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  background: var(--accent);
+  color: #0a0a0c;
+  border: none;
+  border-radius: 20px;
+  padding: 7px 16px;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  z-index: 5;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.5);
+}
+
+
+/* ── Progress bar: buffer, handle, hover tip ── */
+#progress-bar-bg { position: relative; cursor: pointer; }
+
+#progress-bar-buffer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: rgba(255,255,255,0.12);
+  border-radius: inherit;
+}
+
+#progress-bar-fill { position: relative; z-index: 1; }
+
+#progress-handle {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.15s;
+  pointer-events: none;
+  z-index: 2;
+}
+
+#progress-wrap:hover #progress-handle,
+#progress-wrap.scrubbing #progress-handle { opacity: 1; }
+
+#progress-wrap { position: relative; }
+
+#progress-tip {
+  position: absolute;
+  bottom: 100%;
+  transform: translateX(-50%);
+  margin-bottom: 6px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 7px;
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--text);
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 6;
+}
+
+/* ── Extra transport buttons ── */
+.nav-btn.text-btn {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  min-width: 34px;
+}
+
+.nav-btn.text-btn:hover { color: var(--accent); }
+.nav-btn.on svg { stroke: var(--accent); }
+
+#now-playing-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+/* ── Double-tap seek flash ── */
+#seek-flash {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(0,0,0,0.55);
+  color: var(--text);
+  font-family: 'DM Mono', monospace;
+  font-size: 13px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  z-index: 3;
+  pointer-events: none;
+  animation: seek-pop 0.5s ease-out;
+}
+
+#seek-flash.left  { left: 12%; }
+#seek-flash.right { right: 12%; }
+
+@keyframes seek-pop {
+  from { opacity: 0; transform: translateY(-50%) scale(0.85); }
+  40%  { opacity: 1; transform: translateY(-50%) scale(1); }
+  to   { opacity: 0; }
+}
+
+/* ── Overlays: playlist picker + shortcut list ── */
+#picker, #help {
+  position: fixed;
+  inset: 0;
+  background: rgba(4,4,6,0.82);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+#picker-box, #help-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: 100%;
+  max-width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0,0,0,0.6);
+}
+
+#picker-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+#picker-head h2 {
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+#picker-close, #help-close {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+#picker-close:hover, #help-close:hover { color: var(--text); }
+
+#picker-list { overflow-y: auto; padding: 6px; }
+
+.picker-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  padding: 9px 12px;
+  color: var(--text);
+  font-family: 'Syne', sans-serif;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.picker-row:hover { background: var(--surface2); }
+.picker-row.active { background: var(--active-bg); color: var(--accent); }
+
+.picker-row .pr-name {
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.picker-row .pr-meta {
+  font-family: 'DM Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.picker-sep {
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 12px 12px 6px;
+  opacity: 0.6;
+}
+
+#help-list {
+  overflow-y: auto;
+  padding: 14px 18px 18px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 18px;
+  align-items: baseline;
+}
+
+#help-list dt {
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+#help-list dd { font-size: 12px; color: var(--muted); }
+
+/* ── Accessibility polish ── */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+.item:focus-visible {
+  outline: 2px solid var(--accent2);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+  #seek-flash { animation: none; }
+  * { scroll-behavior: auto !important; }
+}
+
+@media (max-width: 640px) {
+  /* Volume is the OS's business on phones, but muting still isn't */
+  #speedBtn, #pipBtn { display: none; }
+  #picker-box, #help-box { max-height: 88vh; }
+  #now-playing-meta { display: none; }
+}

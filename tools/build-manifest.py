@@ -5,17 +5,38 @@ Existing entries keep their display name and their position in the list;
 new .m3u files are appended using the filename stem as the name, and
 entries whose file has disappeared are dropped.
 
+Each entry also carries a "count" and "seconds" total, computed here so
+the player can show playlist sizes without fetching and parsing all 65
+files in the browser.
+
     python3 tools/build-manifest.py            # show what would change
     python3 tools/build-manifest.py --apply    # write index.json
 """
 import argparse
 import json
 import pathlib
+import re
 import sys
+
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+import m3u
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PLAYLIST_DIR = ROOT / "playlists"
 MANIFEST = PLAYLIST_DIR / "index.json"
+
+
+def stats(filename):
+    """-> (entry count, total seconds of the entries that declare a duration)"""
+    _, entries, _ = m3u.read(PLAYLIST_DIR / filename)
+    seconds = 0
+    for e in entries:
+        for line in e.raw:
+            hit = re.match(r"#EXTINF:(-?\d+)", line.strip())
+            if hit:
+                seconds += max(0, int(hit.group(1)))
+                break
+    return len(entries), seconds
 
 
 def main():
@@ -32,6 +53,8 @@ def main():
     added = [{"name": pathlib.Path(f).stem, "file": f} for f in on_disk if f not in known]
 
     manifest = kept + added
+    for entry in manifest:
+        entry["count"], entry["seconds"] = stats(entry["file"])
 
     for e in dropped:
         print(f"  - dropped  {e['file']}  ({e['name']})")
