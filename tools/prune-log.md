@@ -69,3 +69,26 @@ Status codes: 4905×206, 181×200, 4×404, 1×403
 
 ---
 
+## 2026-08-31
+
+Checked 5,086 URLs · 11 dead (0.2%) · 14 entries removed from 10 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| Boy-Love-to-Cum-full.m3u | 3 |
+| CUM-WORLD-100K.m3u | 2 |
+| Manjuicepod.m3u | 2 |
+| BOYS-LOVE-TO-CUM.m3u | 1 |
+| Black-Men-Cum-blackmencum-2-2025-03-11-16_11_44.m3u | 1 |
+| Black-Men-Cum.m3u | 1 |
+| Fullononechicago-2025-03-22-01_51_49.m3u | 1 |
+| Gay-Men-Cum.m3u | 1 |
+| Longest_yet.m3u | 1 |
+| Mr.-BigStroke-mrbigstroke-2025-03-11-17_17_52.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4894×206, 181×200, 9×404, 2×403
+
+---
+
