@@ -92,3 +92,24 @@ Status codes: 4894×206, 181×200, 9×404, 2×403
 
 ---
 
+## 2026-09-07
+
+Checked 5,075 URLs · 19 dead (0.4%) · 26 entries removed from 8 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| Boy-Love-to-Cum-full.m3u | 5 |
+| CUM-WORLD-100K.m3u | 5 |
+| Black-Men-Cum.m3u | 4 |
+| Longest_yet.m3u | 4 |
+| BOYS-LOVE-TO-CUM.m3u | 3 |
+| CUM-LIKE-YOU-MEAN-IT.m3u | 2 |
+| XMX.m3u | 2 |
+| X5.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4875×206, 181×200, 14×404, 4×403, 1×503
+
+---
+
