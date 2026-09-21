@@ -134,3 +134,26 @@ Status codes: 4859×206, 181×200, 15×404, 1×403
 
 ---
 
+## 2026-09-21
+
+Checked 5,040 URLs · 10 dead (0.2%) · 11 entries removed from 10 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| Gay-Men-Cum.m3u | 2 |
+| BOYS-LOVE-TO-CUM.m3u | 1 |
+| Bluesky.m3u | 1 |
+| Boy-Love-to-Cum-full.m3u | 1 |
+| CUM-LIKE-YOU-MEAN-IT.m3u | 1 |
+| CUM-WORLD-100K.m3u | 1 |
+| LPSG_Gooners_x_fuel.m3u | 1 |
+| Longest_yet.m3u | 1 |
+| Manjuicepod.m3u | 1 |
+| X5.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4850×206, 180×200, 7×404, 2×403, 1×503
+
+---
+
