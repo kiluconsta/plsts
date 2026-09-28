@@ -157,3 +157,23 @@ Status codes: 4850×206, 180×200, 7×404, 2×403, 1×503
 
 ---
 
+## 2026-09-28
+
+Checked 5,030 URLs · 7 dead (0.1%) · 7 entries removed from 7 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| CUM-LIKE-YOU-MEAN-IT.m3u | 1 |
+| CUM-WORLD-100K.m3u | 1 |
+| Gay-Men-Cum.m3u | 1 |
+| GoonersNetwork.m3u | 1 |
+| Longest_yet.m3u | 1 |
+| Mr.-BigStroke-mrbigstroke-2025-03-11-17_17_52.m3u | 1 |
+| X3.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4843×206, 180×200, 5×404, 2×403
+
+---
+
