@@ -177,3 +177,22 @@ Status codes: 4843×206, 180×200, 5×404, 2×403
 
 ---
 
+## 2026-10-05
+
+Checked 5,023 URLs · 8 dead (0.2%) · 11 entries removed from 6 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| Longest_yet.m3u | 4 |
+| Black-Men-Cum.m3u | 3 |
+| CUM-LIKE-YOU-MEAN-IT.m3u | 1 |
+| CUM-WORLD-100K.m3u | 1 |
+| X3.m3u | 1 |
+| cmrz.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4835×206, 180×200, 7×404, 1×403
+
+---
+
