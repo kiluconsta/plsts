@@ -218,3 +218,22 @@ Status codes: 4822×206, 180×200, 9×404, 4×403
 
 ---
 
+## 2026-10-19
+
+Checked 5,002 URLs · 12 dead (0.2%) · 12 entries removed from 6 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| Gay-Men-Cum.m3u | 7 |
+| Black-Men-Cum-blackmencum-2-2025-03-11-16_11_44.m3u | 1 |
+| CUM-WORLD-100K.m3u | 1 |
+| LPSG_Gooners_x_fuel.m3u | 1 |
+| Longest_yet.m3u | 1 |
+| XMX.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4810×206, 180×200, 9×404, 2×403, 1×TimeoutError
+
+---
+
