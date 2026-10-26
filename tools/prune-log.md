@@ -237,3 +237,20 @@ Status codes: 4810×206, 180×200, 9×404, 2×403, 1×TimeoutError
 
 ---
 
+## 2026-10-26
+
+Checked 4,990 URLs · 14 dead (0.3%) · 14 entries removed from 4 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| ca_teasing.m3u | 9 |
+| CUM-LIKE-YOU-MEAN-IT.m3u | 2 |
+| CUM-WORLD-100K.m3u | 2 |
+| Gay-Men-Cum.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4796×206, 180×200, 14×404
+
+---
+
