@@ -254,3 +254,26 @@ Status codes: 4796×206, 180×200, 14×404
 
 ---
 
+## 2026-11-02
+
+Checked 4,976 URLs · 14 dead (0.3%) · 16 entries removed from 10 playlist(s).
+
+| playlist | removed |
+| --- | ---: |
+| CUM-LIKE-YOU-MEAN-IT.m3u | 3 |
+| CUM-WORLD-100K.m3u | 3 |
+| Black-Men-Cum.m3u | 2 |
+| Longest_yet.m3u | 2 |
+| Gay-Men-Cum.m3u | 1 |
+| LPSG_animations.m3u | 1 |
+| MUSCLES-and-CUM-cummuscles-2025-03-11-17_50_57.m3u | 1 |
+| Manjuicepod.m3u | 1 |
+| Mr.-BigStroke-mrbigstroke-2025-03-11-17_17_52.m3u | 1 |
+| X5.m3u | 1 |
+
+Removed entries are kept in the matching `playlists/*.m3u.dead` file.
+
+Status codes: 4782×206, 180×200, 12×404, 2×403
+
+---
+
