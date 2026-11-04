@@ -388,5 +388,17 @@
     "file": "hugehandlephan.m3u",
     "count": 16,
     "seconds": 756
+  },
+  {
+    "name": "FreakyJake",
+    "file": "FreakyJake.m3u",
+    "count": 19,
+    "seconds": 2396
+  },
+  {
+    "name": "FreakyJake2",
+    "file": "FreakyJake2.m3u",
+    "count": 20,
+    "seconds": 3773
   }
 ]
